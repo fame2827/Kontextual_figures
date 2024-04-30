@@ -1,0 +1,1909 @@
+---
+title: "MS Figures"
+author: "Farhan Ameen"
+date: "`r Sys.Date()`"
+output:
+  html_document: 
+    toc: true
+    code_folding: hide
+    self_contained: yes
+    theme: spacelab
+---
+
+```{r setup, include=FALSE, eval=TRUE}
+knitr::opts_chunk$set(cache = TRUE, message = FALSE, warning = FALSE)
+```
+
+
+```{r libraries, cache = TRUE}
+library(qwraps2)
+library(selectiveInference)
+#library(BiocParallel)
+library(ClassifyR)
+#library(Statial) 
+library(readxl)
+library(janitor)
+library(ggthemes)
+library(lisaClust)
+library(DT)
+library(plotly)
+library(shapviz)
+library(treekoR)
+library(phylogram)
+library(spatstat)
+library(spatstat.random)
+library(ggrepel)
+library(survival)
+library(ggsurvfit)
+library(EBImage)
+library(tidyverse)
+library(tidySingleCellExperiment)
+library(ggh4x)
+library(patchwork)
+library(SpatialExperiment)
+library(here)
+library(survminer)
+library(SpatialDatasets)
+
+# devtools::load_all('/albona/nobackup2/farhana/Statial')
+# devtools::load_all('/albona/nobackup2/farhana/spicyR') 
+
+
+
+theme_set(theme_classic())
+axis_theme =   theme(
+    axis.title.x = element_text(size = 18, vjust = -0.5, colour = "black"),
+    axis.text = element_text(size = 14, colour = "black"),
+    axis.title.y = element_text(size = 18, vjust = 1.5, colour = "black"))
+
+#rmarkdown::render("your_doc.Rmd")
+#lazyload_cache_labels(labels = chunk, path = "MSFigures_cache/html")
+
+#path = "/albona/nobackup2/"
+
+#Verona path 
+path = "/dskh/nobackup/"
+
+
+devtools::load_all("/albona/nobackup2/farhana/Statial")
+```
+
+
+# Keren
+
+[Paper](https://www.cell.com/cell/pdf/S0092-8674(18)31100-0.pdf)
+
+```{r readingData}
+kerenSCE = SpatialDatasets::spe_Keren_2018()
+
+spatialDat = spatialCoords(kerenSCE) |> 
+  data.frame()
+
+kerenSCE$x = spatialDat$x
+kerenSCE$y = spatialDat$y
+
+kerenSCE = kerenSCE |> 
+  mutate(cellType = case_when(
+    cellType == "Keratin_Tumour" ~ "Keratin+ Tumour",
+    cellType == "dn_T_CD3" ~ "CD3",
+    cellType == "B_cell" ~ "B",
+    cellType == "CD4_T_cell" ~ "CD4",
+    cellType == "DC_or_Mono" ~ "DC/Mono",
+    cellType == "Unidentified" ~ "Unidentified",
+    cellType == "Macrophages" ~ "Macrophages",
+    cellType == "CD8_T_cell" ~ "CD8",
+    cellType == "Other_Immune" ~ "Other immune",
+    cellType == "Endothelial" ~ "Endothelial",
+    cellType == "Mono_or_Neu" ~ "Mono/Neu",
+    cellType == "Mesenchymal" ~ "Mesenchymal",
+    cellType == "Neutrophils" ~ "Neutrophils",
+    cellType == "NK" ~ "NK",
+    cellType == "Tumour" ~ "Tumour",
+    cellType == "DC" ~ "DC",
+    cellType == "Tregs" ~ "Tregs",
+    TRUE ~ cellType
+  ),
+  event = 1 - Censored)
+
+```
+
+
+## Parent populations {.tabset}
+
+### Kontextual
+
+```{r kerenKontextTree}
+tcells = c("Tregs", "CD4", "CD8", "CD3")
+immune = c(tcells, "NK", "B", "Neutrophils", "Macrophages", "DC", "DC/Mono", "Mono/Neu", "Other immune")
+stromal = c("Endothelial", "Mesenchymal")
+tumour = c("Tumour", "Keratin+ Tumour")
+all = c("Unidentified", tcells, immune, stromal, tumour)
+
+parentDf = Statial::parentCombinations(all, tcells, immune, stromal, tumour)
+
+
+kontextTree <- read.dendrogram(text = "(Unidentified,(Keratin+ Tumour, Tumour),(Endothelial, Mesenchymal),(B, DC, DC/Mono, Macrophages, Mono/Neu, Neutrophils, NK, Other immune, (Tregs, CD3, CD4, CD8)));")
+
+
+#pdf("figures/keren/kontextParent.pdf", height = 10, width = 6)
+phylogram::as.phylo.dendrogram(kontextTree) |> 
+  plot()
+dev.off()
+```
+
+### TreekoR
+```{r kerenTreekor}
+kerenTree <- treekoR::getClusterTree(t(assay(kerenSCE, "intensities")),
+                            kerenSCE$cellType,
+                            hierarchy_method="hopach")
+
+
+parent1 = c("Mono/Neu", "Macrophages")
+parent2 = c(parent1, "DC/Mono")
+parent3 = c("Mesenchymal", "Unidentified")
+parent4 = c(parent3, "Endothelial")
+parent5 = c("Tumour", "Keratin+ Tumour")
+parent6 = c(parent1, parent2, parent3, parent4, parent5, "DC", "Neutrophils")
+parent7 = c("Tregs", "CD8", "CD3")
+parent8 = c(parent7, "Other immune")
+parent9 = c("NK", "CD4")
+parent10 = c(parent7, parent8, parent9, "B")
+parentall = c(parent1, parent2, parent3, parent4, parent5, parent6, parent7, parent8, parent9, parent10)
+
+treeDf = Statial::parentCombinations(parentall, parent1, parent2, parent3, parent4, parent5, parent6, parent7, parent8, parent9, parent10)
+
+#pdf("figures/treeKorParent.pdf", height = 10, width = 6)
+
+kerenTree$clust_tree |> plot()
+
+
+```
+
+
+
+```{r calcKontext, eval = FALSE}
+devtools::load_all("/dski/nobackup/farhana/Statial")
+
+
+kerenKontext = Statial::Kontextual(
+  kerenSCE, 
+  parentDf = parentDf,
+  r = 100,
+  cores = 20
+)
+
+
+kerenTreeKontext = Statial::Kontextual(
+  kerenSCE, 
+  parentDf = treeDf,
+  r = 100,
+  cores = 20
+)
+
+
+kerenInhom = Statial::Kontextual(
+  kerenSCE,
+  parentDf = parentDf,
+  inhom = TRUE,
+  r = 100,
+  cores = 20
+)
+
+#save(kerenKontext, kerenTreeKontext, kerenInhom, file = "keren/kerenKontext.RData")
+
+
+```
+
+```{r readRData}
+load("keren/kerenKontext.RData")
+```
+
+
+## Image 6
+
+
+```{r creatingKerenSCE6}
+kerenSCE6 = kerenSCE[, kerenSCE$imageID =="6"]
+
+
+p53Pos = assay(kerenSCE6)["p53",]  |> 
+  as.numeric() > -0.300460
+
+
+kerenSCE6$cellType[kerenSCE6$cellType %in% c("Tumour", "Keratin+ Tumour") &  p53Pos] = "p53+Tumour" 
+
+kerenSCE6$cellType[kerenSCE6$Group == 2] = "Immune"
+
+```
+
+### Image
+
+```{r savingImage6}
+kerenSCE6Plot = kerenSCE6[ , kerenSCE6$cellType %in% c("Keratin+ Tumour", "Immune", "p53+Tumour")] |> 
+  colData() |> 
+    data.frame()
+
+scale = 2048/800
+
+ggplot(kerenSCE6Plot, aes(x = x, y =y, col = cellType)) +
+  geom_point() + 
+  geom_point(size = 1.2) +
+  scale_color_manual(values=c("#404040", "#D7D8D8", "#E25758")) +
+  theme_void() +
+  theme(legend.position = "none") +
+  geom_segment(aes(y = -100, yend = -100,
+                   xend = max(kerenSCE6Plot$x), x = max(kerenSCE6Plot$x) - 100*scale),
+               linewidth = 1, lineend= "round", show.legend = F, col = "black")
+
+
+#ggsave("figures/keren/Image6.pdf", dpi = 400, height = 5, width = 6)
+```
+
+
+### RsCurve
+
+```{r keren6RsCurve}
+set.seed(101)
+
+
+kerenRs = Statial::kontextCurve(
+  kerenSCE6,
+  from = "Immune", 
+  to = "p53+Tumour", 
+  parent = c("p53+Tumour", "Keratin+ Tumour"),
+  rs = seq(50, 500, 50),
+  se = TRUE,
+  edge = TRUE,
+  nSim = 20,
+  cores = 40
+)
+
+
+#saveRDS(kerenRs, "keren/kerenRs.RDS")
+
+```
+
+
+```{r savingKontextCurve6}
+kerenRs |> 
+  mutate(r = r/scale) |> 
+Statial::kontextPlot() +
+  theme_classic() +
+  ylim(-45, 30) +
+  theme(legend.position = "none",
+        axis.text = element_text(size  = 14),
+        axis.title.x = element_text(size = 18, vjust = -0.5),
+        axis.title.y = element_text(size = 18, vjust = 1.5)) +
+  labs(x = "Radius (µm)")
+
+ggsave("figures/keren/kontextCurve6.pdf", height = 5, width = 7)
+```
+
+
+
+## Image 5
+
+```{r kontextScatterFunction}
+plotKontextScatter = function(kontextResult, r, highlightVal = "test") {
+  
+  p = kontextResult |> 
+  group_by(test) |> 
+  mutate(original = ifelse(original == -r, 0, original)) |> 
+  mutate(kontextual = ifelse(kontextual == -r, 0, kontextual)) |> 
+  summarise(original = mean(original, na.rm = TRUE)/sd(original, na.rm = TRUE),
+            kontextual = mean(kontextual, na.rm = TRUE)/sd(kontextual, na.rm = TRUE)) |>
+  ggplot(aes(x = original, y = kontextual, text = test)) +
+  geom_point(size = 4) +
+  gghighlight::gghighlight(test == highlightVal,
+                           unhighlighted_params = list(size = 3)) +
+  annotate("rect", xmin = -Inf, xmax = 0, ymin = 0, ymax = Inf,
+           alpha=0.15, fill="#E25758") +
+  annotate("rect", xmin = 0, xmax = Inf, ymin = -Inf, ymax = 0,
+           alpha=0.15, fill ="#E25758") +
+  labs(x = "L-function", y = "Kontextual") +
+  geom_vline(xintercept = 0, col = "red", linetype = "dashed", alpha = 0.5) +
+  geom_hline(yintercept = 0, col = "red", linetype = "dashed", alpha = 0.5) +
+  theme_bw() +
+  axis_theme
+  
+  p
+  
+}
+
+
+
+
+showKontextual = function(data, kontextMat, image, relationship){
+  
+  # split relationship
+  split_relationship = str_split(relationship, "__")[[1]]
+  from = split_relationship[[1]]
+  to = split_relationship[[2]]
+  parentName = split_relationship[[3]]
+  
+  parent = get(parentName)
+  
+  
+  # Get original and konditional values
+  kontVal = kontextMat |> 
+    filter(imageID == image, 
+           test == relationship) 
+  
+  title = paste("Image:", image,
+                "Original:", round(pull(kontVal, original), 2),
+                "Kontextual:", round(pull(kontVal, kontextual), 2))
+  
+  
+  # plot data
+  data |>
+    colData() |>
+    data.frame() |>
+    filter(imageID == image) |>
+    filter(cellType %in% c(parent, to, from)) |>
+    mutate(plotCells = case_when(
+      cellType == from ~ from,
+      cellType == to ~ to,
+      TRUE ~ parentName
+    )) |>
+    mutate(plotCells = factor(plotCells, levels = c(parentName, to,  from ))) |>
+    arrange(plotCells) |>
+    ggplot(aes(x = x, y = y, col = plotCells)) +
+    geom_point() +
+    scale_color_manual(values = c( "#D7D8D8",  "#E25758", "#404040")) +
+    
+    labs(title = title, legend = "Cell Type") +
+    theme_classic()
+}
+```
+
+
+### Scatter plot - Kontextual 
+
+```{r savingImage5, include = FALSE, eval = FALSE}
+cellcounts = kerenSCE |> 
+  filter(imageID == "5") |> 
+  pull(cellType) |> 
+  table() 
+
+
+p = kerenKontext |> 
+  filter(imageID == "5") |> 
+  separate(test, into = c("from", "to", "parent"), sep = "__") |> 
+ # filter(parent == "immune") |> 
+  mutate(test = paste(from, to, parent, sep = "__")) |> 
+  filter(from %in% names(cellcounts[cellcounts >50]), to %in% names(cellcounts[cellcounts >50])) |> 
+  ggplot(aes(x = original, y = kontextual, text = test)) +
+  geom_point(size = 4) +
+  gghighlight::gghighlight(test == "Keratin+ Tumour__CD8__immune",
+                           unhighlighted_params = list(size = 3)) +
+  annotate("rect", xmin = -Inf, xmax = 0, ymin = 0, ymax = Inf,
+           alpha=0.15, fill="#E25758") +
+  annotate("rect", xmin = 0, xmax = Inf, ymin = -Inf, ymax = 0,
+           alpha=0.15, fill ="#E25758") +
+  labs(x = "L-function", y = "Kontextual") +
+  geom_vline(xintercept = 0, col = "red", linetype = "dashed", alpha = 0.5) +
+  geom_hline(yintercept = 0, col = "red", linetype = "dashed", alpha = 0.5) +
+  theme_bw() +
+  axis_theme
+  
+
+ggplotly(p)
+
+ggsave("figures/keren/Image5scatterPlot.pdf", height = 6, width = 7, dpi = 400)
+```
+
+### Image 5
+
+```{r}
+p = showKontextual(
+  kerenSCE,
+  kerenKontext,
+  image = 5,
+  relationship = relationship
+)
+
+scale = 2048/800
+p + 
+  labs(title = NULL) +
+  theme_void() + 
+  theme(legend.position = "none") +
+  geom_segment(aes(y = -100, yend = -100,
+                   xend = max(kerenSCE6Plot$x), x = max(kerenSCE6Plot$x) - 100*scale),
+               linewidth = 1, lineend= "round", show.legend = F, col = "black")
+
+ggsave("figures/keren/Image5.pdf", device = "pdf", dpi = 400, height = 5, width = 6)
+```
+
+
+
+```{r}
+showKontextual = function(data, kontextMat, image, relationship){
+  
+  # split relationship
+  split_relationship = str_split(relationship, "__")[[1]]
+  from = split_relationship[[1]]
+  to = split_relationship[[2]]
+  parentName = split_relationship[[3]]
+  
+  parent = get(parentName)
+  
+  
+  # Get original and konditional values
+  kontVal = kontextMat |> 
+    filter(imageID == image, 
+           test == relationship) 
+  
+  title = paste("Image:", image,
+                "Original:", round(pull(kontVal, original), 2),
+                "Kontextual:", round(pull(kontVal, kontextual), 2))
+  
+  
+  # plot data
+  data |>
+    colData() |>
+    data.frame() |>
+    filter(imageID == image) |>
+    filter(cellType %in% c(parent, to, from)) |>
+    mutate(plotCells = case_when(
+      cellType == from ~ from,
+      cellType == to ~ to,
+      cellType %in% parent[!(parent %in% c(to, from) )] ~ parentName,
+    )) |>
+    mutate(plotCells = factor(plotCells, levels = c( to,  parentName,  from ))) |>
+    arrange(plotCells) |>
+    ggplot(aes(x = x, y = y, col = plotCells)) +
+    geom_point() +
+    #scale_color_manual(values = c("#D7D8D8", "#FF9130", "#164863")) +
+    scale_color_manual(values = c( "#D7D8D8", "#FF9130",  "#164863")) +
+    
+    labs(title = title, legend = "Cell Type") +
+    theme_classic()
+  
+}
+#c("#F2D79D", "#E4A73B", "#DB8250", "#D1645E", "#CB2272", "#9F2283", "#433D8F")
+
+
+
+showKontextual(
+  kerenSCE,
+  kerenKontext,
+  image = 5,
+  relationship = "tcells__Keratin+ Tumour__immune"
+)
+
+showKontextual(
+  kerenSCE,
+  kerenKontext,
+  image = 5,
+  relationship = "CD8__Keratin+ Tumour__tcells"
+)
+
+```
+
+
+
+### Kontextual (treekor)
+
+```{r kontextTreeScatterplot}
+p = plotKontextScatter(kerenTreeKontext, r = 100)
+
+p
+
+ggplotly(p)
+```
+
+## Simulation
+
+### Simulation Images
+
+```{r newSimPlots}
+
+set.seed(84230)
+
+## Simulation comparmentalisation without moat
+removal = 0.25
+r = 0.1
+sigma = 0.05
+k = 40
+mu = 50
+childSigma = 1
+includeTissue = FALSE
+
+
+#constructing compartment densities (cDen) which other densities will be based off
+compartment = spatstat.random::rMatClust(kappa = k, r = r, mu = mu)
+cDen = spatstat.explore::density.ppp(compartment, sigma = sigma)
+
+tumourDen = cDen
+
+
+#Density values in the bottom removal% will = 0, so that no points can be placed there, make top 1-removal % be solid (create a mask)
+tumourDen[tumourDen < max(tumourDen) * removal] = 0
+tumourDen[tumourDen > 0] = max(tumourDen)
+
+#Invert tumourDen mask to create T cell mask
+tDen = ((-tumourDen) / sum(tumourDen) * sum(tumourDen)) + max(tumourDen)
+tDen$v = pmax(tDen$v, 0)
+
+
+#defining Cd8 densities
+cd8Den = cDen
+cd8Den = (tDen * cDen) / mean(max(cDen), max(tDen))
+cd8Den = ((1 - cd8Den) / sum(cd8Den) * sum(cd8Den)) + max(cd8Den)
+cd8Den[cd8Den > max(cd8Den) * removal] = 0
+
+
+#Smooth out cd8, use pmax so there are no negative probabilities, and scale the values up so that the cell counts matches the other densities
+
+cd8Den$v = EBImage::gblur(cd8Den$v, sigma = 4)
+cd8Den$v = pmax(cd8Den$v, 0)
+cd8Den = cd8Den * (mean(max(tumourDen), max(tDen)) / max(cd8Den))*3
+
+
+
+#Make cells using densities
+tumourCells = spatstat.random::rpoispp(tumourDen)
+tCells = spatstat.random::rpoispp(tDen)
+cd8Insig = spatstat.random::rpoispp(tDen)
+cd8Sig = spatstat.random::rpoispp(cd8Den)
+
+#Define marks
+marks(tumourCells) = factor("tumour_cells")
+marks(tCells) = factor("t_cells")
+marks(cd8Insig) = factor("cd8_t_cells")
+marks(cd8Sig) = factor("cd8_t_cells")
+
+#set up simulations.
+simInsig = superimpose(tumourCells, tCells, cd8Insig)
+simSig = superimpose(tumourCells, tCells, cd8Sig)
+
+
+if (includeTissue == TRUE) {
+  tissueCells = rpoispp(mean(intensity(tumourCells), intensity(tCells)))
+  marks(tissueCells) = factor("tissue_cells")
+  simInsig = superimpose(simInsig, tissueCells)
+  simSig = superimpose(simSig, tissueCells)
+}
+  
+simSigPPP = simSig
+
+
+simSig = data.frame(simSig) |> 
+  rename("cellType" = "marks") |> 
+  mutate(imageID = "sig") 
+
+
+simInsig = data.frame(simInsig) |> 
+  rename("cellType" = "marks") |> 
+  mutate(imageID = "insig")
+
+
+nullImage = data.frame(
+   x = abs(runif(12000)),
+   y = abs(runif(12000)),
+   marks =  rep(c("tumour_cells", "t_cells", "cd8_t_cells"), each = 4000),
+   cellType = rep(c("tumour_cells", "t_cells", "cd8_t_cells"), each = 4000),
+   cellID = 1:12000,
+   imageID = "null"
+) |> 
+  mutate(marks = as.factor(marks), 
+         cellType = as.factor(cellType))
+
+simSig = simSig |>
+  mutate(x = x*800,
+         y = y*800)
+
+simInsig = simInsig |>
+  mutate(x = x*800,
+         y = y*800)
+
+
+nullImage = nullImage |>
+  mutate(x = x*800,
+         y = y*800)
+#ggsave("plot.png", dpi = 400, height = 5, width = 8)
+```
+
+
+```{r simKontextCurve}
+
+
+from = "tumour_cells"
+to = "cd8_t_cells"
+parent = c("cd8_t_cells", "t_cells")
+edge = TRUE
+rs = seq(10, 150, 20)
+se = TRUE
+nSim = 20
+cores = 40
+
+
+sigSimCurve = Statial::kontextCurve(
+  simSig,
+  from = from,
+  to = to,
+  parent = parent,
+  rs = rs,
+  edge = edge,
+  se = se,
+  nSim = nSim,
+  cores = cores
+)
+
+
+insigSimCurve = Statial::kontextCurve(
+  simInsig,
+  from = from,
+  to = to,
+  parent = parent,
+  rs = rs,
+  edge = edge,
+  se = se,
+  nSim = nSim,
+  cores = cores
+)
+
+nullSimCurve = Statial::kontextCurve(
+  nullImage,
+  from = from,
+  to = to,
+  parent = parent,
+  rs = rs,
+  edge = edge,
+  se = se,
+  nSim = nSim,
+  cores = cores
+)
+
+
+```
+ 
+
+
+```{r showSim, fig.height = 8, fig.width = 12}
+
+
+
+plotSim = function(sim) {
+  ggplot(sim) +
+    aes(x = x, y = y, col = cellType) +
+    geom_point(size = 0.5) +
+    scale_colour_manual(
+      values = c("#264788", "#C03530", "#E89A99"),
+      breaks = c("tumour_cells", "cd8_t_cells", "t_cells")
+    ) +
+    labs(title = NULL) +
+    theme_void() +
+    theme(legend.position = "none") +
+  geom_segment(aes(y = -50, yend = -50,
+                   xend = max(sim$x), x = max(sim$x) - 100),
+               linewidth = 1, lineend= "round", show.legend = F, col = "black")
+
+}
+
+plotCurve = function(simDat) {
+  simDat |> 
+  mutate(r = r) |>
+  Statial::kontextPlot() +
+  ylim(-35, 15) + 
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text = element_text(size  = 12),
+        axis.title.x = element_text(size = 16, vjust = -0.5),
+        axis.title.y = element_text(size = 16, vjust = 1.5)) +
+  labs(x = "Radius (µm)")
+}
+
+
+plotSig = plotSim(simSig)
+
+plotInsig = plotSim(simInsig)
+
+plotNull = plotSim(nullImage)
+
+
+sigCurvePlot = plotCurve(sigSimCurve) +
+    labs(y = NULL) 
+insigCurvePlot = plotCurve(insigSimCurve) +
+  labs(y = NULL)
+nullCurvePlot = plotCurve(nullSimCurve) +
+  theme(plot.margin = margin(0.5, 0,0,0, "cm"))
+
+
+(plotSig + plotInsig + plotNull) /
+  (sigCurvePlot + insigCurvePlot + nullCurvePlot)
+
+
+ggsave("figures/simulation/kontextCurve.pdf", height = 6.5, width = 10)
+```
+
+### Permutation vs Kontextual
+
+```{r permFunctions}
+#Function to randomise only specified cells in a ppp
+relabel = function(cells.ppp, labels = NULL) {
+  
+  #if labels are NULL relabel the whole image, otherwise relabel just the specified marks
+  if (is.null(labels)) {
+    relabeledCells =  spatstat.random::rlabel(cells.ppp)
+  } else {
+    #split up cells into subset which will be relabeled, and subset which wont be relabeled
+    notRelabel = cells.ppp %>% subset(!(marks %in% labels))
+    toRelabel = cells.ppp %>% subset(marks %in% labels)
+    
+    #relabel toRelabel cells
+    relabeled = spatstat.random::rlabel(toRelabel)
+    
+    #combine relabeled cells and non relabeled cells
+    relabeledCells = superimpose(notRelabel, relabeled)
+  }
+
+  return(relabeledCells)
+}
+
+
+
+#Function to calculate the average nearest neighbour from 1 cell type to another
+avgnn = function(cells.ppp, from, to) {
+  
+  #Find indexes of the cell we want to measure distances from
+  fromIndex = which(cells.ppp$marks == from)
+  
+  #Calculate the distances from each point in cells.ppp to nearest marks (for all marks)
+  distTo = spatstat.geom::nndist(cells.ppp, by = marks(cells.ppp)) %>% data.frame()
+  
+  #Select the "to" cells and the indexes of the "from" cells
+  avgnn = distTo[fromIndex, to] %>% mean()
+  
+  return(avgnn)
+}
+
+
+doPerm = function(PPP,
+                  from,
+                  to,
+                  parent,
+                  rep = 1000,
+                  cores = 1) {
+  
+  
+  images = replicate(1000, PPP, simplify = FALSE)
+  
+  relabeled = bplapply(images,
+                       function(x){relabel(x, labels = parent)},
+                       BPPARAM = MulticoreParam(workers = cores))
+  
+  avgnnSim = bplapply(relabeled, 
+                        function(x){ avgnn(x, from = from, to = to)},
+                       BPPARAM = MulticoreParam(workers = cores))
+  
+  avgnnSim = unlist(avgnnSim)
+  
+  ogval = avgnn(PPP,
+                from = from,
+                to = to)
+  
+  allRandom = append(avgnnSim, ogval) 
+  mean = mean(allRandom)
+  sd = sd(allRandom)
+  ogz = (ogval - mean)/sd
+  randomz = (avgnnSim - mean)/sd
+  
+  
+print((mean - ogval)/scale)
+
+allRandom %>% 
+  data.frame(val = ./scale) %>% 
+    ggplot(aes(x = val)) +
+    geom_histogram(fill = "#619CFF", color = "black", bins = 20) +
+    geom_vline(xintercept = ogval/scale, linetype = "dashed", size  = 1) +
+    xlab("Distance to immune cells (z-score)") +
+    ylab("Count") 
+  
+}
+
+```
+
+
+#### Simulation time
+
+
+```{r simPerm, fig.height = 10}
+
+set.seed(101)
+
+from = "cd8_t_cells"
+to = "tumour_cells"
+parent = c("cd8_t_cells", "t_cells")
+
+sigOw = Statial::makeWindow(simSig)
+insigOw = Statial::makeWindow(simInsig)
+nullOw = Statial::makeWindow(nullImage)
+
+sigPPP = ppp(x = simSig$x, y = simSig$y, marks = simSig$cellType, window = sigOw)
+insigPPP = ppp(x = simInsig$x, y = simInsig$y, marks = simInsig$cellType, window = insigOw)
+nullImagePPP = ppp(x = nullImage$x, y = nullImage$y, marks = nullImage$cellType, window = nullOw)
+
+#16.11 um
+sigPerm = doPerm(sigPPP,
+                 from = from,
+                 to = to,
+                 parent = parent, cores = 20)
+
+#-0.15
+insigPerm = doPerm(insigPPP,
+                 from = from,
+                 to = to,
+                 parent = parent, cores = 20)
+#-0.03
+nullPerm = doPerm(nullImagePPP,
+                 from = from,
+                 to = to,
+                 parent = parent, cores = 20)
+
+
+sigPerm = sigPerm +
+  labs(x = "Distance to tumour cells (µm)")
+
+insigPerm = insigPerm +
+  labs(x = "Distance to tumour cells (µm)",
+       y = NULL)
+
+nullPerm = nullPerm +
+  labs(x = "Distance to tumour cells (µm)",
+       y = NULL) +
+  theme(plot.margin = margin(0.5, 0,0,0, "cm"))
+
+
+(plotSig + plotInsig + plotNull) /
+(sigPerm + insigPerm + nullPerm)
+
+#ggsave("figures/simulation/permutation.pdf", height = 6.5, width = 10)
+```
+
+
+```{r perm}
+set.seed(101)
+
+imageDf = nullImage
+ow = Statial::makeWindow(nullImage)
+imageSCE = SingleCellExperiment(
+  colData = imageDf
+)
+
+image = ppp(x = imageDf$x, y = imageDf$y, marks = imageDf$cellType, window = ow)
+
+start = Sys.time()
+
+images = replicate(1000, image, simplify = FALSE)
+
+relabeled = bplapply(images,
+                     function(x){relabel(x, labels = c("cd8_t_cells", "t_cells"))})
+
+avgnnSim = bplapply(relabeled, 
+                      function(x){ avgnn(x, from = "cd8_t_cells", to = "tumour_cells")})
+
+avgnnSim = unlist(avgnnSim)
+
+ogval = avgnn(image,
+              from = "cd8_t_cells",
+              to = "tumour_cells")
+
+allRandom = append(avgnnSim, ogval) 
+mean = mean(allRandom)
+sd = sd(allRandom)
+ogz = (ogval - mean)/sd
+randomz = (avgnnSim - mean)/sd
+
+end = Sys.time()
+
+
+print(paste("Permutation time:", round(end-start, 3)))
+
+randomz %>% 
+  data.frame(val = .) %>% 
+  ggplot(aes(x = val)) +
+  geom_histogram(fill = "#619CFF", color = "black", bins = 20) +
+  geom_vline(xintercept = ogz, linetype = "dashed", size  = 1) +
+  xlab("Distance to immune cells (z-score)") +
+  ylab("Count") 
+
+#ggsave("plot.png", height =5, width = 7)  
+start = Sys.time()
+
+Statial::Kontextual(imageSCE,
+            r = 50,
+            from = "cd8_t_cells",
+            to = "tumour_cells", 
+            parent = c("cd8_t_cells", "t_cells"))
+end = Sys.time()
+
+
+print(paste("Kontextual time:", round(end-start, 3)))
+```
+
+
+
+#### Image 6
+
+```{r perm6}
+ow = makeWindow(kerenSCE6)
+
+image = ppp(
+  x = kerenSCE6$x,
+  y = kerenSCE6$y,
+  marks = factor(kerenSCE6$cellType),
+  window = ow
+)
+
+images = replicate(1000, image, simplify = FALSE)
+
+
+
+relabeled = bplapply(images,
+                     function(x){relabel(x, labels = c("Keratin+ Tumour", "p53+Tumour"))})
+
+avgnnSim = bplapply(relabeled, 
+                      function(x){ avgnn(x, from = "p53+Tumour", to = "Immune")})
+
+avgnnSim = unlist(avgnnSim)
+
+ogval = avgnn(image,
+              from = "p53+Tumour",
+              to = "Immune")
+
+allRandom = append(avgnnSim, ogval) 
+mean = mean(allRandom)
+sd = sd(allRandom)
+ogz = (ogval - mean)/sd
+randomz = (avgnnSim - mean)/sd
+
+(mean - ogval)/scale
+
+allRandom %>% 
+  data.frame(val = ./scale) %>% 
+  ggplot(aes(x = val)) +
+  geom_histogram(fill = "#619CFF", color = "black", bins = 20) +
+  geom_vline(xintercept = ogval/scale, linetype = "dashed", size  = 1) +
+  xlab("Distance to nearest immune cell (µm)") +
+  ylab("Count") +
+   theme(axis.text = element_text(size  = 12),
+        axis.title.x = element_text(size = 16, vjust = -0.5),
+        axis.title.y = element_text(size = 16, vjust = 1.5)) 
+
+ggsave("figures/permutation6.png", height = 5, width = 7)
+```
+
+
+## Survival analysis
+
+```{r kerenSurvivalFeatures}
+noColdSCE = kerenSCE |> 
+  filter(!imageID %in% c(22,38)) |> 
+  filter(tumour_type != "cold")
+
+kerenPatientDf = noColdSCE |> 
+  colData() |> 
+  data.frame() |> 
+  select(-c(x, y, CellID, cellType, cellSize, C, tumorYN, tumorCluster, Group, immuneCluster,
+            immuneGroup)) |> 
+  unique() |> 
+  remove_rownames()
+  
+# Removing cold tumour type
+noColdIdx = kerenPatientDf |> 
+  pull(imageID)
+
+
+# Kontextual values
+kerenKontextMat = Statial::prepMatrix(kerenKontext) %>% 
+  replace(is.na(.), 0) 
+  
+
+# Kontextual values - Treekor
+kerenKontextTreeMat = Statial::prepMatrix(kerenTreeKontext)%>%
+  replace(is.na(.), 0)
+
+
+# L-function values
+kerenOgMat = kerenKontext |> 
+  filter(imageID %in% noColdIdx) |> 
+  separate(test, c("A", "B", "parent"), "__") |> 
+  select("imageID", "A", "B", "original") |> 
+  unique() |> 
+  mutate(test = paste(A, B, sep = "__")) |> 
+  select(-c("A", "B"))  |> 
+  pivot_wider(names_from = "test", values_from = "original") |> 
+  column_to_rownames("imageID") %>% 
+  replace(is.na(.), 0)
+
+# inhom L-function values
+kerenOgInhomMat = kerenInhom |> 
+  filter(imageID %in% noColdIdx) |> 
+  separate(test, c("A", "B", "parent"), "__") |> 
+  select("imageID", "A", "B", "original") |> 
+  unique() |> 
+  mutate(test = paste(A, B, sep = "__")) |> 
+  select(-c("A", "B"))  |> 
+  pivot_wider(names_from = "test", values_from = "original") |> 
+  column_to_rownames("imageID") %>% 
+  replace(is.na(.), 0)
+
+
+
+# Cell Proportions
+kerenPropMat = spicyR::getProp(noColdSCE, feature = "cellType") 
+
+
+# Treekor
+clust_tree <- getClusterTree(t(assay(noColdSCE, "intensities")),
+                             noColdSCE$cellType,
+                             hierarchy_method = "hopach")
+
+
+parentProp = getCellProp(phylo=clust_tree$clust_tree,
+                       clusters= noColdSCE$cellType,
+                       samples= noColdSCE$imageID,
+                       classes= noColdSCE$tumour_type) |> 
+  select(-class) |> 
+  arrange(sample_id) |> 
+  column_to_rownames("sample_id")
+
+
+
+kerenFeatureList = list(
+  "Cell type proportions" = kerenPropMat,
+  "Parent proportions" = parentProp,
+  "L-function" = kerenOgMat,
+  "Inhomogeneous L-function" = kerenOgInhomMat, 
+  "Kontextual" = kerenKontextMat,
+  "Kontextual (treekor)" = kerenKontextTreeMat
+)
+
+# Sanity check
+kerenFeatureList = lapply(kerenFeatureList, function(x){
+  x |> rownames_to_column("imageID") |>
+    mutate(imageID = as.numeric(imageID)) |>
+    arrange(imageID) |>
+    filter(imageID %in% noColdIdx)  |>
+    column_to_rownames("imageID")
+})
+
+
+kerenFeatureListNo100 = lapply(kerenFeatureList, function(x){
+  x %>% 
+  replace(x == -100, 0)
+})
+
+kerenSurv = Surv(kerenPatientDf$Survival_days_capped., kerenPatientDf$event)
+names(kerenSurv) = kerenPatientDf$imageID
+
+
+measurementsOutcome = ClassifyR::prepareData(kerenFeatureList, kerenSurv)
+featuresMulti = measurementsOutcome$measurements
+
+
+```
+
+### Classification
+
+```{r kerenSurvClassification}
+set.seed(101)
+
+measurements = kerenFeatureListNo100
+outcome = kerenSurv
+classifier = "CoxNet"
+selectionMethod = "CoxPH"
+multiViewMethod = "none"
+
+nFolds = 10
+nFeatures = 20
+nRepeats = 100
+nCores = 40
+
+kerenSurvClassification = crossValidate(
+  measurements = measurements,
+  outcome = outcome,
+  classifier = classifier,
+  selectionMethod  = selectionMethod,
+  multiViewMethod = multiViewMethod,
+  nFolds = nFolds,
+  nFeatures = nFeatures,
+  nRepeats = nRepeats,
+  nCores = nCores
+  )
+
+
+#saveRDS(kerenSurvClassification, "keren/kerenFinalSurvClassification.rds")
+```
+
+```{r kerenSurvPlot}
+
+kerenSurvClassification = readRDS("keren/kerenFinalSurvClassification.rds")
+
+axis_names = names(kerenFeatureList)
+axis_names[1] = "Cell type\nproportions"
+axis_names[2] = "Parent proportions"
+axis_names[4] = "Inhomogeneous\nL-function"
+ 
+
+
+performancePlot(kerenSurvClassification[-4], metric = "C-index",
+                characteristicsList = list(x = "auto"),
+                orderingList = list("Assay Name" = names(kerenFeatureList)[-4])) +
+  theme(legend.position = "none") +
+  scale_x_discrete(guide = guide_axis(angle = 45),
+                   labels = axis_names[-4]) +
+  theme(axis.text.x = element_text(size = 14),
+        axis.text.y = element_text(size = 16),
+        axis.title.y = element_text(size = 18)) +
+  scale_fill_tableau() +
+  labs(x = NULL)
+
+
+
+test = kerenSurvClassification$`Cell type proportions.CoxNet.CoxPH` |> 
+  calcCVperformance()
+
+
+#ggsave("figures/keren/survClassification.pdf", height = 7, width = 8,  dpi = 750)
+```
+
+
+```{r}
+performance = lapply(kerenSurvClassification, function(res){
+  perf = calcCVperformance(res) 
+  return(perf@performance$`C-index` |> mean())
+  
+})
+performance
+```
+
+
+### Surv curves
+
+
+```{r}
+
+# Calculating p values 
+# There are no 0s or -100s so no need to filter
+survCurveData = data.frame(
+  imageID = names(kerenSurv),
+  lfunction = kerenFeatureList$`L-function`$`Keratin+ Tumour__CD8`,
+  kontextual = kerenFeatureList$Kontextual$`Keratin+ Tumour__CD8__immune`,
+  surv = kerenSurv
+) 
+
+kontSurv = coxph(surv ~ kontextual, data = survCurveData)
+kontPval = summary(kontSurv)$coefficients[5] |> 
+  round(3)
+
+lSurv = coxph(surv ~ lfunction, data = survCurveData)
+lPval = summary(lSurv)$coefficients[5] |> 
+  round(3)
+
+
+pvals = data.frame(
+  test = c("Kontextual", "L-function"),
+  lab = c(paste("p=", kontPval, sep = ""),
+          paste("p=", lPval, sep = ""))
+)
+
+
+# Plotting survival curves
+plotData = survCurveData |> 
+  mutate(
+  "L-function" = ifelse(lfunction > median(lfunction), "Attraction", "Avoidance"),
+  "Kontextual" = ifelse(kontextual > median(kontextual), "Attraction", "Avoidance")) |>
+  # mutate(
+  # "L-function" = ifelse(lfunction > 0, "Attraction", "Avoidance"),
+  # "Kontextual" = ifelse(kontextual > 0, "Attraction", "Avoidance")) |> 
+  select(-c(lfunction, kontextual)) |> 
+  pivot_longer(-c(imageID,surv), names_to = "test", values_to = "values")
+
+
+
+fit = survfit2(surv ~ values, data = plotData)
+
+survCurve = ggsurvplot_facet(fit, plotData, facet.by = "test",
+                 palette = "jco",
+                 short.panel.labs = TRUE) +
+  geom_text(data = pvals, aes(x = 1000, y = 0.45, label = lab), size = 4.5)+
+  ylim(0.3, 1 ) +
+  labs(col = "Localisation",
+       x = "Time (days)") +
+  theme_bw() +
+  theme(
+    axis.title.x = element_text(size = 15, vjust = -1),
+    axis.title.y = element_text(size = 15, vjust = 2),
+    axis.text = element_text(size = 12, colour = "black"),
+    legend.position = "bottom",
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 12),
+    strip.background = element_rect(
+      fill = "white",
+      size = 0,
+      linetype = "blank"
+    ),
+    strip.text.x = element_text(size = 15, color = "black")
+  ) +
+  theme(legend.position = "none")
+
+
+ggplotly(survCurve)
+
+
+```
+
+
+
+
+```{r}
+
+plotData = survCurveData |> 
+  mutate(
+  "lfunc" = ifelse(lfunction > median(lfunction), "Attraction", "Avoidance"),
+  "kontext" = ifelse(kontextual > median(kontextual), "Attraction", "Avoidance"))
+
+plotAttract = plotData |> 
+  select(-c(lfunction, kontextual)) |> 
+  pivot_longer(-c(`imageID`, `surv`),
+               names_to = "test", 
+               values_to = "attraction") |> 
+  mutate(test = case_when(test == "lfunc" ~ "lfunction",
+                          test == "kontext" ~ "kontextual"))
+
+
+plotVals = plotData |> 
+  select(-c(lfunc, kontext)) |> 
+  pivot_longer(-c(`imageID`, `surv`),
+               names_to = "test", 
+               values_to = "values")
+
+combinedPlotData = left_join(plotVals, plotAttract,
+                             by = c("imageID" = "imageID", "test" = "test"), 
+) |> 
+  select(-surv.y) |> 
+  rename("surv" = "surv.x")
+
+
+xupper = 35
+xlower = -65
+
+lmin = -65
+lmed = median(survCurveData$lfunction) 
+lmax = 5.0
+
+kmin = -50
+kmed = median(survCurveData$kontextual)
+kmax = 35
+
+lannotate = data.frame(new = 0,
+                       test = "lfunction",
+                       xmin = c(lmin, lmed),
+                       xmax = c(lmed, lmax),
+                       ymin = -1,
+                       ymax = 1,
+                       attraction = c("Avoidance", "Attraction"))
+
+
+kannotate = data.frame(new = 0,
+                       test = "kontextual",
+                       xmin = c(kmin, kmed),
+                       xmax = c(kmed, kmax),
+                       ymin = -1,
+                       ymax = 1,
+                       attraction = c("Avoidance", "Attraction"))
+
+patientAnnotations = combinedPlotData |> 
+  mutate(new = 0) %>% 
+  ggplot() +
+  geom_rect(data = lannotate,
+            aes(y = new, xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = attraction), alpha = 0.5) + 
+  geom_rect(data = kannotate,
+            aes(y = new, xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = attraction), alpha = 0.5) + 
+  geom_point(aes(y = new, x = values, col = attraction)) +
+  facet_wrap(~test, scales = "free_x",
+             labeller = labeller(test = c("lfunction" = "L-function", "kontextual" = "Kontextual"))) +
+  scale_colour_manual(values = list("Attraction" = "#0073C2FF", "Avoidance" = "#EFC000FF")) +
+  scale_fill_manual(values = list("Attraction" = "#0073C2FF", "Avoidance" = "#EFC000FF")) +
+  labs(x = "Relationship value (split on median)") +
+  theme_void() +
+  theme(legend.position = "none",
+        aspect.ratio = 0.1,
+        panel.spacing = unit(3.5, "lines"),
+        plot.margin = margin(0,1,0,0, "cm")) +
+  theme(strip.background = element_blank(), strip.text = element_blank()) +
+  theme(axis.text.x = element_text(vjust = -1.5, colour = "black", size = 12),
+        axis.title.x = element_text(vjust = -5, colour = "black", size = 14)) +
+  ggh4x::facetted_pos_scales(x = list(
+    test == "kontextual" ~ scale_x_continuous(breaks = c(kmin, round(kmed,1), kmax)),
+    test == "lfunction" ~ scale_x_continuous(breaks = c(lmin, round(lmed, 1), lmax))
+))
+  
+```
+
+
+```{r}
+survCurveFinal = survCurve/patientAnnotations + 
+  plot_layout(heights = c(10,3), guides = "collect")
+
+ggsave("figures/keren/keratinCD8SurvCurve.pdf", survCurveFinal, height = 5, width = 8)
+```
+
+
+
+
+
+### Example Images
+
+```{r}
+feature = "Keratin+ Tumour__CD8__immune"
+
+survCurveData |> 
+  mutate(
+  "L-function" = ifelse(lfunction > median(lfunction), "Attraction", "Avoidance"),
+  "Kontextual" = ifelse(kontextual > median(kontextual), "Attraction", "Avoidance")
+) |> filter(`L-function` != `Kontextual`)
+
+
+
+plotDat = data.frame("event" = kerenPatientDf$event,
+           "surv" = kerenPatientDf$Survival_days_capped.,
+           "kont" = kerenFeatureList$Kontextual[[feature]],
+           #"l" = inhomMat[[feature]],
+           "imageID" = kerenPatientDf$imageID, 
+           "type" = kerenPatientDf$tumour_type
+           ) |> 
+  filter(kont != 0) |> 
+  filter(kont != -100)
+
+p = plotDat |> 
+  filter(type == "compartmentalised") |> 
+  ggplot( aes(x = kont, y = surv, col = as.factor(event), text = imageID)) +
+  geom_text(aes(label = imageID), vjust = -0.5) +
+  #geom_vline(xintercept = median(plotDat$kont), col = "red", linetype = "dashed") +
+  geom_vline(xintercept = median(0), col = "red", linetype = "dashed") +
+  geom_point() +theme_classic()
+
+p
+
+```
+
+
+```{r}
+feature = "Keratin+ Tumour__CD8__immune"
+
+
+plotSurvImages = function(image) {
+  from = "Keratin+ Tumour"
+  to = "CD8"
+  parent = immune
+  parentName = "Immune"
+  
+  scale = 2048/800
+  
+  # plot data
+  plotData = kerenSCE |>
+    colData() |>
+    data.frame() |>
+    filter(cellType %in% c(parent, to, from)) |>
+    mutate(plotCells = case_when(cellType == from ~ from,
+                                 cellType == to ~ to,
+                                 TRUE ~ parentName)) |>
+    mutate(plotCells = factor(plotCells, levels = c(parentName, from, to))) |>
+    arrange(plotCells)
+  
+  
+  colours = list("Keratin+ Tumour" = "#404040", "Immune" = "#D7D8D8", "CD8" = "#E25758")
+  
+  plot = plotData |>
+    filter(imageID == image) |>
+    ggplot(aes(x = x, y = y, col = plotCells)) +
+    geom_point() +
+    scale_color_manual(values = colours) +
+    theme_void() +
+    theme(legend.position = "none") +
+    geom_segment(aes(y = -100, yend = -100,
+                     xend = max(plotData$x), x = max(plotData$x) - 100*scale),
+                 linewidth = 1, lineend= "round", show.legend = F, col = "black")
+  
+  return(plot)
+}
+
+
+
+goodImage = plotSurvImages(9)
+goodImage
+
+poorImage =  plotSurvImages(16)
+poorImage
+
+ggsave("figures/keren/tumourCD8good9.pdf", goodImage, height = 5, width = 6)
+ggsave("figures/keren/tumourCD8poor16.pdf", poorImage, height = 5, width = 6)
+```
+
+
+### Bubble plot
+```{r}
+testMat = kerenRecurrenceFeatures$Kontextual
+outcome = kerenRecurrence
+
+coxTests <- function(measurementMat, outcome, remove = c(NA)) {
+  result <- lapply(colnames(measurementMat), function(test) {
+    measurementCol <- measurementMat[[test]]
+    ind <- !(measurementCol %in% remove)
+    fit <- coxph(surv ~ measurementCol, subset = ind)
+    result <- summary(fit)$coefficients[1, c(1, 3, 5)]
+  })
+
+
+  result <- result |>
+    dplyr::bind_rows() |>
+    dplyr::mutate(test = names(measurementMat)) |>
+    dplyr::rename("se.coef" = "se(coef)", "p.value" = "Pr(>|z|)") |>
+    dplyr::select(test, coef, se.coef, p.value) |>
+    dplyr::arrange(p.value)
+
+  return(result)
+}
+
+test = lm(factor(outcome) ~ testMat$`CD8__DC/Mono__immune`)
+
+test |> summary()
+```
+
+
+
+
+
+```{r bubblePlot function}
+
+
+# Create function which calculates coxtests
+coxTests = function(measurementMat, Surv, remove = c(0, -100), type = "cont", pvalMethod = "fdr") {
+  
+  modifiedMat = apply(measurementMat, 2, function(measurementCol) {
+    ind = !(measurementCol %in% remove)
+    measurementCol = measurementCol[ind]
+    
+    if(type == "median") {
+      measurementCol = if_else(measurementCol > median(measurementCol), "Attraction", "Avoidance")
+    }
+    
+    if(type == "0"){
+       measurementCol = if_else(measurementCol > 0, "Attraction", "Avoidance")
+       if (sum(measurementCol == "Attraction") == 0 |
+           sum(measurementCol == "Avoidance") == 0) {
+         return(NA)
+       }
+    }
+    
+    return(measurementCol)
+  })
+  
+  modifiedMat = modifiedMat[!is.na(modifiedMat)]
+  
+  result = lapply(names(modifiedMat), function(test){
+    ind = !(measurementMat[[test]] %in% remove)
+    fit = coxph(Surv[ind] ~ modifiedMat[[test]])
+    summary(fit)$coefficients[1, c(1, 3, 5)]
+  })
+
+    
+  result = result |> 
+    bind_rows() |> 
+    mutate(test = names(modifiedMat)) |> 
+  rename( "se.coef" = "se(coef)",
+          "p.value" = "Pr(>|z|)") |> 
+  select(test, coef, se.coef, p.value)
+  
+  result$`adj.p.value` = p.adjust(result$`p.value`, method = pvalMethod)
+
+  return(result)
+
+}
+
+
+
+survBubble = function(kontextMat, surv, remove = c(0, -100), type = "cont") {
+  coxMat = coxTests(kontextMat, surv,remove = remove, type = type) %>%
+    mutate_if(is.numeric, signif, digits = 2) |>
+    arrange(p.value)
+  
+  factor_order = c(
+    "CD3 T",
+    "CD4 T",
+    "CD8 T",
+    "Regulatory T" ,
+    "Naive T",
+    "NK",
+    "B",
+    "Neutrophils",
+    "Macrophages",
+    "DC",
+    "DC/Mono",
+    "Mono/Neu",
+    "Other immune",
+    "Endothelial",
+    "Mesenchymal",
+    "Tumour",
+    "Keratin+ Tumour",
+    "Unidentified"
+  )
+  
+  plotData = coxMat |>
+    separate(test,
+             into = c("from", "to", "parent"),
+             sep = "__") |>
+    arrange(parent, to, from) |>
+    mutate(
+      to = case_when(
+        to == "CD8" ~ "CD8 T",
+        to == "CD4" ~ "CD4 T",
+        to == "CD3" ~ "CD3 T",
+        to == "Tregs" ~ "Regulatory T",
+        TRUE ~ to
+      ),
+      from = case_when(
+        from == "CD8" ~ "CD8 T",
+        from == "CD4" ~ "CD4 T",
+        from == "CD3" ~ "CD3 T",
+        from == "Tregs" ~ "Regulatory T",
+        TRUE ~ from
+      )
+    ) |> 
+    mutate(ogto= to,
+           to = paste(to, parent, sep = "__")) |>
+    mutate(
+      sig = p.value < 0.05,
+      logP = -log10(p.value),
+      size = logP / max(logP, na.rm = TRUE),
+      from = factor(from, levels = factor_order),
+      to = factor(to, levels = factor_order),
+      ogto = factor(ogto, levels = factor_order),
+      parent = case_when(
+        parent == "immune" ~ "Immune",
+        parent == "stromal" ~ "Stromal",
+        parent == "tcells" ~ "T cells",
+        parent == "tumour" ~ "Tumour"
+      )
+    ) |> 
+    mutate(parent = factor(parent, levels = c("T cells", "Immune", "Stromal", "Tumour")))
+  
+  palette = ggthemes_data$tableau$`color-palettes`$regular$`Tableau 10`$value
+    
+  colourDat = palette[1:length(unique(plotData$parent))]
+  names(colourDat) = levels(plotData$parent)
+  
+  
+  strip = strip_themed(background_x = elem_list_rect(fill =colourDat))
+  
+  ggplot(plotData, aes(x = ogto, y = from)) +
+    geom_tile(aes(fill = parent), alpha = -1) +
+    ggplot2::geom_point(ggplot2::aes(size = pmax(logP/2, 0.15), colour = coef)) +  
+    geom_point(data = filter(plotData, sig == TRUE), aes(size = pmax(logP/2, 0.15)), shape = 21) +
+    ggplot2::geom_point(ggplot2::aes(shape = "P < 0.05"), size = -1) + 
+    facet_grid2(~parent, scales = "free", space = "free", strip = strip) +
+    scale_colour_gradient2(low = "#4575B4", mid = "white", high = "#D73027") +
+    scale_fill_manual(values = colourDat) + 
+    scale_size(range = c(2, 8)) +
+    scale_x_discrete(guide = guide_axis(angle = 45)) +
+    labs(colour = "CoxPH \ncoefficient",
+         fill = "Context",
+         shape = NULL,
+         x = NULL,
+         y = NULL) +
+    ggplot2::guides(shape = ggplot2::guide_legend(order = 2, override.aes = list(size=5, shape = 1, col = "black")),
+                    colour = ggplot2::guide_colourbar(order = 3),
+                    fill = guide_legend(order = 1, override.aes = list(alpha = 1)),
+                    size = "none") +
+    theme_classic() +
+    theme(legend.title = element_text(size = 14),
+          legend.text = element_text(size = 12),
+          axis.text = element_text(size = 12, colour = "black"),
+          strip.text = element_text(size = -1),
+          strip.clip = "off",
+          strip.background = element_rect(linewidth = NA),
+          panel.spacing = unit(0.4,'lines'))
+
+}
+
+
+```
+
+
+
+```{r bubblePlot}
+
+bubblePlot = survBubble(kontextMat = kerenFeatureList$Kontextual, remove = c(0), kerenSurv, type = "cont")
+
+bubblePlot
+ggsave("figures/keren/bubble.pdf", bubblePlot, height = 6, width = 12, dpi = 500)
+```
+```{r}
+
+coxMat = coxTests(kerenFeatureList$Kontextual, kerenSurv,remove = c(0), type = "cont") %>%
+  mutate_if(is.numeric, signif, digits = 2) |>
+  arrange(adj.p.value, abs(coef))
+
+coxMat
+```
+
+
+
+
+
+
+# Xenium breast cancer
+
+[paper](https://www.nature.com/articles/s41467-023-43458-x)
+7500 x 5500um
+
+## BIDcell annotation
+
+```{r}
+xeniumBreastSPE <- load("data/xeniumBreastSPE.rda")
+
+
+cellType_colours = c(
+  "Macrophage" = "#EF5A9D",
+  "CD163+ Macrophage" =  "#F397C0",
+  "IRF7+ DC" = "#C594BF",
+  "LAMP3+ DC" = "#DFCDE4",
+  "CD8 T" = "#ff891c",
+  "CD4 T" = "#A10037",
+  "B Cells" = "#FACB12",
+  "Plasma" = "#E1C239",
+  "Mast cells" = "#f7f79e",
+  "DCIS 1" = "#C9EBFB",
+  "DCIS 2" = "#3F84AA",
+  "Invasive tumour" = "#164863",
+  "VWF+ Endothelial" = "#65A83E",
+  "STAB2+ Endothelial" = "#354E23",
+  "ACTA2+ Myoepi" = "#C3C388" ,
+  "KRT15+ Myoepi" = "#647a4f",
+  "Fibroblast" = "#CDE088",
+  "Unassigned" = "#e6e6e6"
+)
+
+
+xeniumXY = spatialCoords(xeniumBreastSPE) |> 
+  data.frame()
+
+xeniumBreastSPE$x = xeniumXY$cell_centroid_x
+xeniumBreastSPE$y = xeniumXY$cell_centroid_y
+
+
+
+
+xeniumBreastSPE = xeniumBreastSPE |> 
+  rename("cellType" = "scClassify") |> 
+   mutate(cellType = case_when(cellType == "SCGB2A2+ Malignant" ~ "DCIS 1",
+                              cellType == "CRABP2+ Malignant" ~ "DCIS 2",
+                              cellType == "ECM1+ Malignant" ~ "Invasive tumour",
+                              cellType == "unassigned" ~ "Unassigned",
+                              cellType == "Firoblast" ~ "Fibroblast",
+                              TRUE ~ cellType)) |> 
+  mutate(cellTypeFactor = factor(cellType, levels = names(cellType_colours)))
+
+xeniumBreastSPE$imageID = 1
+
+
+```
+
+## Saving Xenium image
+```{r}
+p = xeniumBreastSPE |>
+  arrange((cellTypeFactor)) |> 
+  ggplot(aes(x = x, y = y, col = cellTypeFactor)) +
+  geom_point(size = 0.01) +
+  scale_colour_manual(values = cellType_colours) +
+  labs(colour = "Cell Type") +
+  geom_segment(aes(y = -100, yend = -100,
+                     xend = max(xeniumBreastSPE$x), x = max(xeniumBreastSPE$x) - 1000),
+                 linewidth = 1, lineend= "round", show.legend = F, col = "black") +
+  guides(colour=guide_legend(override.aes=list(size= 4))) +
+  theme_void()
+
+p
+
+#ggsave(here("finalRMD/figures/xenium/wholeImage.pdf"), dpi = 400, height = 5, width = 8)
+```
+
+
+
+```{r}
+macrophages <- c("Macrophage", "CD163+ Macrophage")
+t_cells <- c("CD8 T", "CD4 T")
+dendritic_cells <- c("IRF7+ DC", "LAMP3+ DC")
+b_cells <- c("B Cells", "Plasma")
+immune = c( "Mast cells", b_cells, dendritic_cells, t_cells, macrophages)
+
+# Endothelial cells
+endothelial <- c("VWF+ Endothelial", "STAB2+ Endothelial")
+
+# Myoepithelial cells
+myoepi <- c("ACTA2+ Myoepi", "KRT15+ Myoepi")
+structural = c("Fibroblast",endothelial, myoepi)
+
+# Malignant cells
+#malignant <- c("ECM1+ Malignant", "SCGB2A2+ Malignant", "CRABP2+ Malignant")
+malignant = c("Invasive tumour", "DCIS 1", "DCIS 2")
+
+all = c("Unassigned", macrophages, t_cells, dendritic_cells, b_cells, immune,
+        endothelial, myoepi, structural, malignant)
+
+parentDf = Statial::parentCombinations(
+  all = all, macrophages, t_cells, dendritic_cells, b_cells, immune,
+        endothelial, myoepi, structural, malignant
+)
+
+
+```
+
+
+
+## CD8 T cell tumour relationship
+
+Looking for the same CD8 T cell - Tumour relationship as Keren
+
+### Kontext curve
+```{r}
+xeniumTumour = xeniumBreastSPE |> 
+  mutate(cellType = case_when(cellType %in% malignant ~ "tumour",
+                              TRUE ~ cellType))
+
+
+
+xeniumCurve = Statial::kontextCurve(
+  cells = xeniumTumour,
+  image = 1,
+  from = "tumour",
+  to = "CD8 T",
+  parent = immune,
+  edge = TRUE,
+  rs = seq(10, 120, 10),
+  se = TRUE,
+  cores = 40
+)
+
+
+#saveRDS(xeniumCurve, file = "xenium/xeniumCurve.rds")
+
+#xeniumCurve = readRDS(xenium/xeniumCurve.rds")
+
+
+p = Statial::kontextPlot(xeniumCurve) +
+  theme_classic() +
+  axis_theme +
+  theme(legend.position = "none") +
+  scale_x_continuous(breaks =  seq(20, 120, 20)) +
+  labs(x = "Radius (mm)")
+
+ggsave("figures/xenium/tumour__CD8 T__immune/Curve.pdf",
+       dpi = 400, height = 5, width = 7, plot = p)
+
+
+```
+
+
+### Creating image
+
+
+```{r}
+
+xeniumCD8Tumour = xeniumTumour |> 
+   mutate(cellType = case_when(cellType %in% immune[immune != "CD8 T"] ~ "immune",
+                              TRUE ~ cellType)) |> 
+  filter(cellType %in% c("CD8 T", "immune", "tumour")) |> 
+  mutate(cellType = factor(cellType, levels = c("CD8 T", "tumour",  "immune"))) |> 
+  arrange(desc(cellType))
+
+#colours = list("CD8 T" = "#164863", "tumour" = "#FF9130", "immune" = "#D7D8D8")
+colours = list("CD8 T" = "#E25758", "tumour" = "#404040", "immune" = "#D7D8D8")
+
+
+p = xeniumCD8Tumour |> 
+  ggplot(aes(x = x, y = y, col = cellType)) +
+  scale_color_manual(values = colours) +
+  geom_point(size = 0.3) +
+  theme_void() +
+  theme(legend.position = "none") +
+  geom_segment(aes(y = -100, yend = -100,
+                     xend = max(xeniumCD8Tumour$x), x = max(xeniumCD8Tumour$x) - 1000),
+                 linewidth = 1, lineend= "round", show.legend = F, col = "black") 
+
+
+p 
+
+
+ggsave(here("finalRMD/figures/xenium/tumour__CD8 T__immune/Image.pdf"),
+       dpi = 400, height = 5, width = 7, plot = p)
+```
+
+## Individual tumour - cd8 t relationship
+
+
+### Barplot
+```{r}
+
+xeniumBreastKontext100 = Statial::Kontextual(
+  cells = xeniumBreastSPE,
+  r = 100,
+  parentDf = parentDf,
+  cores = 40
+)
+
+#saveRDS(xeniumBreastKontext100, file = here("finalRMD/xenium/xeniumBreastKontext100.RDS"))
+#xeniumBreastKontext100 = readRDS(here("finalRMD/xenium/xeniumBreastKontext100.RDS"))
+
+```
+
+```{r}
+# Relationships to save
+
+xeniumBreastKontext100 = readRDS(file = "xenium/xeniumBreastKontext100.RDS")
+
+toHighlight = c("DCIS 1__CD8 T__immune", "DCIS 2__CD8 T__immune", "Invasive tumour__CD8 T__immune")
+
+p = xeniumBreastKontext100 |> 
+  filter(test %in% toHighlight) |> 
+  separate(test, into = c("tumour", "cd8t", "parent"), sep = "__") |> 
+  pivot_longer(cols = c(original, kontextual), names_to =  "test") |> 
+  mutate(test = case_when(test == "kontextual" ~ "Kontextual",
+                          test == "original" ~ "L-function"),
+         test = factor(test, levels = c("L-function", "Kontextual"))) |> 
+  ggplot(aes(x = tumour, y = value, fill = tumour)) +
+  geom_col() +
+  labs( y = "Relationship value", fill = "Tumour type") +
+  scale_fill_manual(values = cellType_colours) +
+  facet_grid(~test)  +
+  theme_bw() +
+  axis_theme +
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        legend.position = "none",
+        strip.background = element_rect(fill = "white", size = 0, linetype = "blank"),
+        strip.text.x = element_text(size = 20,
+                                    color = "black")) 
+  
+p
+  
+ggsave( here("finalRMD/figures/xenium/tumour__CD8 T__immune/Barplot.pdf"), p , dpi = 400, height = 5, width = 5)
+
+
+
+xeniumBreastKontext100 |> 
+  separate(test, sep = "__", into = c("a", "b", "parent")) |> 
+  filter(a %in% c("CD8 T", malignant)) |> 
+  filter(b %in% c("CD8 T", malignant))
+
+```
+
+
+## Image 
+```{r}
+xeniumIndTumour = xeniumBreastSPE |> 
+  filter(cellType %in% c(malignant, immune)) |> 
+  mutate(cellType = case_when(cellType %in% immune[immune != "CD8 T"] ~ "Immune",
+                              TRUE ~ cellType)) |> 
+  mutate(cellType = factor(cellType, levels = c("CD8 T", "DCIS 2", "DCIS 1", "Invasive tumour", "Immune"))) |> 
+  arrange(desc(cellType))
+
+
+
+p = xeniumIndTumour |> 
+  ggplot(aes(x = x, y = y, color = cellType)) +
+  geom_point(size = 0.3) +
+  scale_colour_manual(values = append(cellType_colours, list("Immune" = "#D7D8D8"))) +
+  theme_void() +
+  theme(legend.position = "none") +
+  geom_segment(aes(y = -100, yend = -100,
+                     xend = max(xeniumCD8Tumour$x), x = max(xeniumCD8Tumour$x) - 1000),
+                 linewidth = 1, lineend= "round", show.legend = F, col = "black") 
+
+#ggsave( here("finalRMD/figures/xenium/tumour__CD8 T__immune/individual_image.pdf"), p , dpi = 400, height = 5, width = 7)
+```
+
