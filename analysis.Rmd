@@ -8,6 +8,8 @@ output:
     code_folding: hide
     self_contained: yes
     theme: spacelab
+editor_options: 
+  chunk_output_type: inline
 ---
 
 ```{r setup, include=FALSE, eval=TRUE}
@@ -44,10 +46,11 @@ library(SpatialExperiment)
 library(here)
 library(survminer)
 library(SpatialDatasets)
+library(imcRtools)
+library(DIMPLE)
 
-# devtools::load_all('/albona/nobackup2/farhana/Statial')
-# devtools::load_all('/albona/nobackup2/farhana/spicyR') 
-
+devtools::load_all("/albona/nobackup2/farhana/Statial")
+devtools::load_all("/albona/nobackup2/farhana/spicyR")
 
 
 theme_set(theme_classic())
@@ -56,16 +59,7 @@ axis_theme =   theme(
     axis.text = element_text(size = 14, colour = "black"),
     axis.title.y = element_text(size = 18, vjust = 1.5, colour = "black"))
 
-#rmarkdown::render("your_doc.Rmd")
-#lazyload_cache_labels(labels = chunk, path = "MSFigures_cache/html")
 
-#path = "/albona/nobackup2/"
-
-#Verona path 
-path = "/dskh/nobackup/"
-
-
-devtools::load_all("/albona/nobackup2/farhana/Statial")
 ```
 
 
@@ -195,7 +189,7 @@ kerenInhom = Statial::Kontextual(
 ```
 
 ```{r readRData}
-load("keren/kerenKontext.RData")
+load("../keren/kerenKontext.RData")
 ```
 
 
@@ -279,7 +273,287 @@ Statial::kontextPlot() +
 ggsave("figures/keren/kontextCurve6.pdf", height = 5, width = 7)
 ```
 
+## Comparison to other methods - Null hypothesis test
 
+
+### Image 6
+
+```{r methodComparison}
+set.seed(101)
+iter = 1000
+scale = 2048/800
+
+
+# Kontextual
+kontextRes = Statial::Kontextual(
+  cells = kerenSCE6,
+  r = 100*scale,
+  from = "Immune", 
+  to = "p53+Tumour",
+  parent = c("p53+Tumour", "Keratin+ Tumour")
+)
+
+
+# inhom L
+inhomLRes = Statial::Kontextual(
+  cells = kerenSCE6,
+  r = 100*scale,
+  from = "Immune", 
+  to = "p53+Tumour",
+  inhom = TRUE,
+  parent = c("p53+Tumour", "Keratin+ Tumour")
+)
+
+
+# SpicyR
+## https://academic.oup.com/bioinformatics/article/38/11/3099/6570585
+
+spicyRRes = spicyR::getPairwise(
+  cells = kerenSCE6,
+  from = "Immune", 
+  to = "p53+Tumour", 
+  Rs = c(25, 50, 75, 100)*scale
+) |> data.frame()
+
+
+# DIMPLE
+## https://www.sciencedirect.com/science/article/pii/S2666389923002714#bib13
+
+dimpleObject = new_MltplxExperiment(
+  x = kerenSCE6$x,
+  y = kerenSCE6$y,
+  marks = factor(kerenSCE6$cellType),
+  slide_id = kerenSCE6$imageID
+)
+
+
+## adding some densities
+dimpleObject = update_intensity(dimpleObject, 10, 30)
+
+dimpleObject = update_dist(dimpleObject, cor)
+
+dimpleRes = dimpleObject$mltplx_objects[[1]]$mltplx_dist$dist
+
+
+# imcRtools
+## https://www.nature.com/articles/s41596-023-00881-0
+
+kerenSCE6 = buildSpatialGraph(kerenSCE6,
+                              img_id = "imageID",
+                              type = "delaunay",
+                              max_dist = 20,
+                              coords = c("x", "y"))
+
+
+kerenSCE6 = buildSpatialGraph(kerenSCE6,
+                              img_id = "imageID",
+                              type = "expansion",
+                              threshold = 20,
+                              coords = c("x", "y"))
+
+kerenSCE6 = buildSpatialGraph(kerenSCE6,
+                              img_id = "imageID",
+                              type = "knn",
+                              k = 20,
+                              coords = c("x", "y"))
+
+knnRes = imcRtools::testInteractions(
+  object = kerenSCE6,
+  group_by = "imageID",
+  label = "cellType",
+  method = "classic",
+  iter = iter,
+  colPairName = "knn_interaction_graph",
+  return_samples = TRUE,
+  BPPARAM = MulticoreParam(workers = 20)
+) |> 
+  data.frame() |> 
+  filter(from_label == "Immune", to_label == "p53+Tumour")
+
+expansionRes = imcRtools::testInteractions(
+  object = kerenSCE6,
+  group_by = "imageID",
+  label = "cellType",
+  method = "classic",
+  iter = iter,
+  colPairName = "expansion_interaction_graph",
+  return_samples = TRUE,
+  BPPARAM = MulticoreParam(workers = 20)
+) |> 
+  data.frame() |> 
+  filter(from_label == "Immune", to_label == "p53+Tumour")
+
+delaunayRes = imcRtools::testInteractions(
+  object = kerenSCE6,
+  group_by = "imageID",
+  label = "cellType",
+  method = "classic",
+  iter = iter,
+  colPairName = "delaunay_interaction_graph",
+  return_samples = TRUE,
+  BPPARAM = MulticoreParam(workers = 20)
+) |> 
+  data.frame() |> 
+  filter(from_label == "Immune", to_label == "p53+Tumour")
+
+
+# Final dataframe
+
+methodList = list(
+  "Kontextual" = kontextRes$kontextual,
+  "L-function" = kontextRes$original,
+  "Inhomogeneous L-function" = inhomLRes$original,
+  "SpicyR" = spicyRRes$Immune__p53.Tumour,
+  "knn" = knnRes$ct,
+  "expansion" = expansionRes$ct,
+  "delaunay" = delaunayRes$ct,
+  "DIMPLE" = dimpleRes["Immune", "p53+Tumour"]
+)
+
+methodCompareRes = data.frame(
+  "methods" = names(methodList),
+  "observed value" = unname(unlist(methodList)))
+
+
+```
+
+### Permutation
+```{r methodComparisonSD}
+set.seed(101)
+cores = 40
+
+# Permuting Kontextual, L-function, spicyR and DIMPLE
+
+kerenSCEVector = replicate(iter, kerenSCE6, simplify = FALSE)
+
+kerenSCEShuffled = lapply(kerenSCEVector, function(sce){
+  #idx = sce$cellType %in% c("Immune", "p53+Tumour")
+  #sce$cellType[idx] = sample(sce$cellType[idx])
+  sce$cellType = sample(sce$cellType)
+  return(sce)
+})
+
+
+# Kontextual and L-function
+kontextPerm = bplapply(kerenSCEShuffled, function(sce) {
+    kontextPermRes = Statial::Kontextual(
+      cells = sce,
+      r = 100 * scale,
+      from = "Immune",
+      to = "p53+Tumour",
+      parent = c("p53+Tumour", "Keratin+ Tumour")
+    ) 
+    
+    return(data.frame("original" = kontextPermRes$original, 
+                      "kontextual" = kontextPermRes$kontextual))
+}, BPPARAM = MulticoreParam(workers = cores))
+
+kontextPermBind = kontextPerm |> 
+  bind_rows()
+
+kontextualPerm = kontextPermBind$kontextual
+lfunctionPerm = kontextPermBind$original
+
+
+# Inhom L-function
+inhomLPerm = bplapply(kerenSCEShuffled, function(sce) {
+    kontextPermRes = Statial::Kontextual(
+      cells = sce,
+      r = 100 * scale,
+      from = "Immune",
+      to = "p53+Tumour",
+      inhom = TRUE,
+      parent = c("p53+Tumour", "Keratin+ Tumour")
+    ) 
+    
+    return(data.frame("original" = kontextPermRes$original, 
+                      "kontextual" = kontextPermRes$kontextual))
+}, BPPARAM = MulticoreParam(workers = cores))
+
+inhomLPermBind = inhomLPerm |> 
+  bind_rows()
+
+inhomLPerm = inhomLPermBind$original
+
+
+
+# SpicyR 
+spicyRPerm = bplapply(kerenSCEShuffled, function(sce) {
+    
+  spicyRPermRes = spicyR::getPairwise(
+      cells = sce,
+      from = "Immune",
+      to = "p53+Tumour",
+      Rs = c(50, 100) * scale,
+      edge = FALSE
+    ) |> data.frame()
+  
+  return(spicyRPermRes$Immune__p53.Tumour)
+  
+}, BPPARAM = MulticoreParam(workers = cores)) |> 
+  unlist()
+
+
+
+dimplePerm = bplapply(kerenSCEShuffled, function(sce) {
+    
+  dimpleShuffledObject = new_MltplxExperiment(
+    x = sce$x,
+    y = sce$y,
+    marks = factor(sce$cellType),
+    slide_id = sce$imageID
+  )
+  
+  ## adding some densities
+  dimpleShuffledObject = update_intensity(dimpleShuffledObject, 10, 30)
+  dimpleShuffledObject = update_dist(dimpleShuffledObject, cor)
+  dimplePermRes = dimpleShuffledObject$mltplx_objects[[1]]$mltplx_dist$dist
+
+  return(dimplePermRes["Immune", "p53+Tumour"])
+  
+}, BPPARAM = MulticoreParam(workers = cores)) |> 
+  unlist()
+  
+
+extractGraphIteractions = function(graphRes){
+  graphRes[11:length(graphRes)] |> 
+  unlist() |> 
+  unname()
+}
+
+
+knnPerm = extractGraphIteractions(knnRes)
+expansionPerm = extractGraphIteractions(expansionRes)
+delaunayPerm = extractGraphIteractions(delaunayRes)
+
+methodCompareRes$permutedZscore = c(
+  (kontextRes$kontextual - mean(kontextualPerm))/sd(kontextualPerm),
+  (kontextRes$original - mean(lfunctionPerm))/sd(lfunctionPerm),
+  (inhomLRes$original - mean(inhomLPerm)/sd(inhomLPerm)),
+  (spicyRRes$Immune__p53.Tumour - mean(spicyRPerm))/sd(spicyRPerm),
+  (knnRes$ct - mean(knnPerm))/sd(knnPerm),
+  (expansionRes$ct - mean(expansionPerm))/sd(expansionPerm),
+  (delaunayRes$ct - mean(delaunayPerm))/sd(delaunayPerm),
+  (dimpleRes["Immune", "p53+Tumour"] - mean(dimplePerm))/sd(dimplePerm)
+  
+)
+
+methodCompareRes$permutedSD = c(
+  sd(kontextualPerm),
+  sd(lfunctionPerm),
+  sd(inhomLPerm),
+  sd(spicyRPerm),
+  sd(knnPerm),
+  sd(expansionPerm),
+  sd(delaunayPerm),
+  sd(dimplePerm)
+  
+)
+
+#caption: sd came from permuting the values.
+
+
+```
 
 ## Image 5
 
@@ -975,6 +1249,7 @@ ggsave("figures/permutation6.png", height = 5, width = 7)
 ```
 
 
+
 ## Survival analysis
 
 ```{r kerenSurvivalFeatures}
@@ -1084,6 +1359,7 @@ featuresMulti = measurementsOutcome$measurements
 
 
 ```
+
 
 ### Classification
 
@@ -1853,57 +2129,3 @@ p = xeniumBreastKontext100 |>
   pivot_longer(cols = c(original, kontextual), names_to =  "test") |> 
   mutate(test = case_when(test == "kontextual" ~ "Kontextual",
                           test == "original" ~ "L-function"),
-         test = factor(test, levels = c("L-function", "Kontextual"))) |> 
-  ggplot(aes(x = tumour, y = value, fill = tumour)) +
-  geom_col() +
-  labs( y = "Relationship value", fill = "Tumour type") +
-  scale_fill_manual(values = cellType_colours) +
-  facet_grid(~test)  +
-  theme_bw() +
-  axis_theme +
-  theme(axis.title.x=element_blank(),
-        axis.text.x=element_blank(),
-        axis.ticks.x=element_blank(),
-        legend.position = "none",
-        strip.background = element_rect(fill = "white", size = 0, linetype = "blank"),
-        strip.text.x = element_text(size = 20,
-                                    color = "black")) 
-  
-p
-  
-ggsave( here("finalRMD/figures/xenium/tumour__CD8 T__immune/Barplot.pdf"), p , dpi = 400, height = 5, width = 5)
-
-
-
-xeniumBreastKontext100 |> 
-  separate(test, sep = "__", into = c("a", "b", "parent")) |> 
-  filter(a %in% c("CD8 T", malignant)) |> 
-  filter(b %in% c("CD8 T", malignant))
-
-```
-
-
-## Image 
-```{r}
-xeniumIndTumour = xeniumBreastSPE |> 
-  filter(cellType %in% c(malignant, immune)) |> 
-  mutate(cellType = case_when(cellType %in% immune[immune != "CD8 T"] ~ "Immune",
-                              TRUE ~ cellType)) |> 
-  mutate(cellType = factor(cellType, levels = c("CD8 T", "DCIS 2", "DCIS 1", "Invasive tumour", "Immune"))) |> 
-  arrange(desc(cellType))
-
-
-
-p = xeniumIndTumour |> 
-  ggplot(aes(x = x, y = y, color = cellType)) +
-  geom_point(size = 0.3) +
-  scale_colour_manual(values = append(cellType_colours, list("Immune" = "#D7D8D8"))) +
-  theme_void() +
-  theme(legend.position = "none") +
-  geom_segment(aes(y = -100, yend = -100,
-                     xend = max(xeniumCD8Tumour$x), x = max(xeniumCD8Tumour$x) - 1000),
-                 linewidth = 1, lineend= "round", show.legend = F, col = "black") 
-
-#ggsave( here("finalRMD/figures/xenium/tumour__CD8 T__immune/individual_image.pdf"), p , dpi = 400, height = 5, width = 7)
-```
-
