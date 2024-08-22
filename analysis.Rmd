@@ -49,8 +49,8 @@ library(SpatialDatasets)
 library(imcRtools)
 library(DIMPLE)
 
-devtools::load_all("/albona/nobackup2/farhana/Statial")
-devtools::load_all("/albona/nobackup2/farhana/spicyR")
+# devtools::load_all("/albona/nobackup2/farhana/Statial")
+# devtools::load_all("/albona/nobackup2/farhana/spicyR")
 
 
 theme_set(theme_classic())
