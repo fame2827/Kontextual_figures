@@ -1,0 +1,289 @@
+---
+title: "MS Figures"
+author: "Farhan Ameen"
+date: "`r Sys.Date()`"
+output:
+  html_document: 
+    toc: true
+    code_folding: hide
+    self_contained: yes
+    theme: spacelab
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE, eval=TRUE}
+knitr::opts_chunk$set(cache = TRUE, message = FALSE, warning = FALSE)
+```
+
+
+```{r libraries, cache = TRUE}
+library(qwraps2)
+library(selectiveInference)
+#library(BiocParallel)
+library(ClassifyR)
+#library(Statial) 
+library(readxl)
+library(janitor)
+library(ggthemes)
+library(lisaClust)
+library(DT)
+library(plotly)
+library(shapviz)
+library(treekoR)
+library(phylogram)
+library(spatstat)
+library(spatstat.random)
+library(ggrepel)
+library(survival)
+library(ggsurvfit)
+library(EBImage)
+library(tidyverse)
+library(tidySingleCellExperiment)
+library(ggh4x)
+library(patchwork)
+library(SpatialExperiment)
+library(here)
+library(survminer)
+library(SpatialDatasets)
+library(imcRtools)
+library(DIMPLE)
+library(crawdad)
+
+devtools::load_all("/albona/nobackup2/farhana/Statial")
+devtools::load_all("/albona/nobackup2/farhana/spicyR")
+
+
+theme_set(theme_classic())
+axis_theme =   theme(
+    axis.title.x = element_text(size = 18, vjust = -0.5, colour = "black"),
+    axis.text = element_text(size = 14, colour = "black"),
+    axis.title.y = element_text(size = 18, vjust = 1.5, colour = "black"))
+
+
+```
+
+
+# Keren
+
+[Paper](https://www.cell.com/cell/pdf/S0092-8674(18)31100-0.pdf)
+
+```{r readingData}
+kerenSCE = SpatialDatasets::spe_Keren_2018()
+
+spatialDat = spatialCoords(kerenSCE) |> 
+  data.frame()
+
+kerenSCE$x = spatialDat$x
+kerenSCE$y = spatialDat$y
+
+kerenSCE = kerenSCE |> 
+  mutate(cellType = case_when(
+    cellType == "Keratin_Tumour" ~ "Keratin+ Tumour",
+    cellType == "dn_T_CD3" ~ "CD3",
+    cellType == "B_cell" ~ "B",
+    cellType == "CD4_T_cell" ~ "CD4",
+    cellType == "DC_or_Mono" ~ "DC/Mono",
+    cellType == "Unidentified" ~ "Unidentified",
+    cellType == "Macrophages" ~ "Macrophages",
+    cellType == "CD8_T_cell" ~ "CD8",
+    cellType == "Other_Immune" ~ "Other immune",
+    cellType == "Endothelial" ~ "Endothelial",
+    cellType == "Mono_or_Neu" ~ "Mono/Neu",
+    cellType == "Mesenchymal" ~ "Mesenchymal",
+    cellType == "Neutrophils" ~ "Neutrophils",
+    cellType == "NK" ~ "NK",
+    cellType == "Tumour" ~ "Tumour",
+    cellType == "DC" ~ "DC",
+    cellType == "Tregs" ~ "Tregs",
+    TRUE ~ cellType
+  ),
+  event = 1 - Censored)
+
+```
+
+
+## Parent populations {.tabset}
+
+### Kontextual
+
+```{r kerenKontextTree}
+tcells = c("Tregs", "CD4", "CD8", "CD3")
+immune = c(tcells, "NK", "B", "Neutrophils", "Macrophages", "DC", "DC/Mono", "Mono/Neu", "Other immune")
+stromal = c("Endothelial", "Mesenchymal")
+tumour = c("Tumour", "Keratin+ Tumour")
+all = c("Unidentified", tcells, immune, stromal, tumour)
+
+parentDf = Statial::parentCombinations(all, tcells, immune, stromal, tumour)
+
+
+kontextTree <- read.dendrogram(text = "(Unidentified,(Keratin+ Tumour, Tumour),(Endothelial, Mesenchymal),(B, DC, DC/Mono, Macrophages, Mono/Neu, Neutrophils, NK, Other immune, (Tregs, CD3, CD4, CD8)));")
+
+
+#pdf("figures/keren/kontextParent.pdf", height = 10, width = 6)
+phylogram::as.phylo.dendrogram(kontextTree) |> 
+  plot()
+dev.off()
+```
+
+### TreekoR
+```{r kerenTreekor}
+kerenTree <- treekoR::getClusterTree(t(assay(kerenSCE, "intensities")),
+                            kerenSCE$cellType,
+                            hierarchy_method="hopach")
+
+
+parent1 = c("Mono/Neu", "Macrophages")
+parent2 = c(parent1, "DC/Mono")
+parent3 = c("Mesenchymal", "Unidentified")
+parent4 = c(parent3, "Endothelial")
+parent5 = c("Tumour", "Keratin+ Tumour")
+parent6 = c(parent1, parent2, parent3, parent4, parent5, "DC", "Neutrophils")
+parent7 = c("Tregs", "CD8", "CD3")
+parent8 = c(parent7, "Other immune")
+parent9 = c("NK", "CD4")
+parent10 = c(parent7, parent8, parent9, "B")
+parentall = c(parent1, parent2, parent3, parent4, parent5, parent6, parent7, parent8, parent9, parent10)
+
+treeDf = Statial::parentCombinations(parentall, parent1, parent2, parent3, parent4, parent5, parent6, parent7, parent8, parent9, parent10)
+
+#pdf("figures/treeKorParent.pdf", height = 10, width = 6)
+
+kerenTree$clust_tree |> plot()
+
+
+```
+
+
+
+```{r calcKontext, eval = FALSE}
+devtools::load_all("/dski/nobackup/farhana/Statial")
+
+
+kerenKontext = Statial::Kontextual(
+  kerenSCE, 
+  parentDf = parentDf,
+  r = 100,
+  cores = 20
+)
+
+
+kerenTreeKontext = Statial::Kontextual(
+  kerenSCE, 
+  parentDf = treeDf,
+  r = 100,
+  cores = 20
+)
+
+
+kerenInhom = Statial::Kontextual(
+  kerenSCE,
+  parentDf = parentDf,
+  inhom = TRUE,
+  r = 100,
+  cores = 20
+)
+
+#save(kerenKontext, kerenTreeKontext, kerenInhom, file = "keren/kerenKontext.RData")
+
+
+```
+
+```{r readRData}
+load("../keren/kerenKontext.RData")
+```
+
+
+
+## Creating image 6
+
+
+```{r creatingKerenSCE6}
+kerenSCE6 = kerenSCE[, kerenSCE$imageID =="6"]
+
+
+p53Pos = assay(kerenSCE6)["p53",]  |> 
+  as.numeric() > -0.300460
+
+
+kerenSCE6$cellType[kerenSCE6$cellType %in% c("Tumour", "Keratin+ Tumour") &  p53Pos] = "p53+Tumour" 
+
+kerenSCE6$cellType[kerenSCE6$Group == 2] = "Immune"
+
+```
+
+
+## Scatter plot + show kontextual function
+```{r kontextScatterFunction}
+plotKontextScatter = function(kontextResult, r, highlightVal = "test") {
+  
+  p = kontextResult |> 
+  group_by(test) |> 
+  mutate(original = ifelse(original == -r, 0, original)) |> 
+  mutate(kontextual = ifelse(kontextual == -r, 0, kontextual)) |> 
+  summarise(original = mean(original, na.rm = TRUE),
+            kontextual = mean(kontextual, na.rm = TRUE)) |>
+  ggplot(aes(x = original, y = kontextual, text = test)) +
+  geom_point(size = 4) +
+  gghighlight::gghighlight(test == highlightVal,
+                           unhighlighted_params = list(size = 3)) +
+  annotate("rect", xmin = -Inf, xmax = 0, ymin = 0, ymax = Inf,
+           alpha=0.15, fill="#E25758") +
+  annotate("rect", xmin = 0, xmax = Inf, ymin = -Inf, ymax = 0,
+           alpha=0.15, fill ="#E25758") +
+  labs(x = "L-function", y = "Kontextual") +
+  geom_vline(xintercept = 0, col = "red", linetype = "dashed", alpha = 0.5) +
+  geom_hline(yintercept = 0, col = "red", linetype = "dashed", alpha = 0.5) +
+  theme_bw() +
+  axis_theme
+  
+  p
+  
+}
+
+
+
+
+showKontextual = function(data, kontextMat, image, relationship){
+  
+  # split relationship
+  split_relationship = str_split(relationship, "__")[[1]]
+  from = split_relationship[[1]]
+  to = split_relationship[[2]]
+  parentName = split_relationship[[3]]
+  
+  parent = get(parentName)
+  
+  
+  # Get original and konditional values
+  kontVal = kontextMat |> 
+    filter(imageID == image, 
+           test == relationship) 
+  
+  title = paste("Image:", image,
+                "Original:", round(pull(kontVal, original), 2),
+                "Kontextual:", round(pull(kontVal, kontextual), 2))
+  
+  
+  # plot data
+  data |>
+    colData() |>
+    data.frame() |>
+    filter(imageID == image) |>
+    filter(cellType %in% c(parent, to, from)) |>
+    mutate(plotCells = case_when(
+      cellType == from ~ from,
+      cellType == to ~ to,
+      TRUE ~ parentName
+    )) |>
+    mutate(plotCells = factor(plotCells, levels = c(parentName,  from, to ))) |>
+    arrange(plotCells) |>
+    ggplot(aes(x = x, y = y, col = plotCells)) +
+    geom_point() +
+    scale_color_manual(values = c( "#D7D8D8",   "#404040", "#E25758")) +
+    
+    labs(title = title, legend = "Cell Type") +
+    theme_classic()
+}
+```
+

@@ -1,0 +1,450 @@
+---
+title: "Figure 3"
+author: "Farhan Ameen"
+date: "`r Sys.Date()`"
+output:
+  html_document: 
+    toc: true
+    code_folding: hide
+    self_contained: yes
+    theme: spacelab
+editor_options: 
+  chunk_output_type: inline
+---
+
+
+# Top panel: Simulation images
+
+```{r newSimPlots}
+
+set.seed(84230)
+
+## Simulation comparmentalisation without moat
+removal = 0.25
+r = 0.1
+sigma = 0.05
+k = 40
+mu = 50
+childSigma = 1
+includeTissue = FALSE
+
+
+#constructing compartment densities (cDen) which other densities will be based off
+compartment = spatstat.random::rMatClust(kappa = k, r = r, mu = mu)
+cDen = spatstat.explore::density.ppp(compartment, sigma = sigma)
+
+tumourDen = cDen
+
+
+#Density values in the bottom removal% will = 0, so that no points can be placed there, make top 1-removal % be solid (create a mask)
+tumourDen[tumourDen < max(tumourDen) * removal] = 0
+tumourDen[tumourDen > 0] = max(tumourDen)
+
+#Invert tumourDen mask to create T cell mask
+tDen = ((-tumourDen) / sum(tumourDen) * sum(tumourDen)) + max(tumourDen)
+tDen$v = pmax(tDen$v, 0)
+
+
+#defining Cd8 densities
+cd8Den = cDen
+cd8Den = (tDen * cDen) / mean(max(cDen), max(tDen))
+cd8Den = ((1 - cd8Den) / sum(cd8Den) * sum(cd8Den)) + max(cd8Den)
+cd8Den[cd8Den > max(cd8Den) * removal] = 0
+
+
+#Smooth out cd8, use pmax so there are no negative probabilities, and scale the values up so that the cell counts matches the other densities
+
+cd8Den$v = EBImage::gblur(cd8Den$v, sigma = 4)
+cd8Den$v = pmax(cd8Den$v, 0)
+cd8Den = cd8Den * (mean(max(tumourDen), max(tDen)) / max(cd8Den))*3
+
+
+
+#Make cells using densities
+tumourCells = spatstat.random::rpoispp(tumourDen)
+tCells = spatstat.random::rpoispp(tDen)
+cd8Insig = spatstat.random::rpoispp(tDen)
+cd8Sig = spatstat.random::rpoispp(cd8Den)
+
+#Define marks
+marks(tumourCells) = factor("tumour_cells")
+marks(tCells) = factor("t_cells")
+marks(cd8Insig) = factor("cd8_t_cells")
+marks(cd8Sig) = factor("cd8_t_cells")
+
+#set up simulations.
+simInsig = superimpose(tumourCells, tCells, cd8Insig)
+simSig = superimpose(tumourCells, tCells, cd8Sig)
+
+
+if (includeTissue == TRUE) {
+  tissueCells = rpoispp(mean(intensity(tumourCells), intensity(tCells)))
+  marks(tissueCells) = factor("tissue_cells")
+  simInsig = superimpose(simInsig, tissueCells)
+  simSig = superimpose(simSig, tissueCells)
+}
+  
+simSigPPP = simSig
+
+
+simSig = data.frame(simSig) |> 
+  rename("cellType" = "marks") |> 
+  mutate(imageID = "sig") 
+
+
+simInsig = data.frame(simInsig) |> 
+  rename("cellType" = "marks") |> 
+  mutate(imageID = "insig")
+
+
+nullImage = data.frame(
+   x = abs(runif(12000)),
+   y = abs(runif(12000)),
+   marks =  rep(c("tumour_cells", "t_cells", "cd8_t_cells"), each = 4000),
+   cellType = rep(c("tumour_cells", "t_cells", "cd8_t_cells"), each = 4000),
+   cellID = 1:12000,
+   imageID = "null"
+) |> 
+  mutate(marks = as.factor(marks), 
+         cellType = as.factor(cellType))
+
+simSig = simSig |>
+  mutate(x = x*800,
+         y = y*800)
+
+simInsig = simInsig |>
+  mutate(x = x*800,
+         y = y*800)
+
+
+nullImage = nullImage |>
+  mutate(x = x*800,
+         y = y*800)
+
+#ggsave("plot.png", dpi = 400, height = 5, width = 8)
+```
+
+
+# Bottom Panel: simulation kontext curves
+
+```{r simKontextCurve}
+
+
+from = "tumour_cells"
+to = "cd8_t_cells"
+parent = c("cd8_t_cells", "t_cells")
+edge = TRUE
+rs = seq(10, 150, 20)
+se = TRUE
+nSim = 20
+cores = 40
+
+
+sigSimCurve = Statial::kontextCurve(
+  simSig,
+  from = from,
+  to = to,
+  parent = parent,
+  rs = rs,
+  edge = edge,
+  se = se,
+  nSim = nSim,
+  cores = cores
+)
+
+
+insigSimCurve = Statial::kontextCurve(
+  simInsig,
+  from = from,
+  to = to,
+  parent = parent,
+  rs = rs,
+  edge = edge,
+  se = se,
+  nSim = nSim,
+  cores = cores
+)
+
+nullSimCurve = Statial::kontextCurve(
+  nullImage,
+  from = from,
+  to = to,
+  parent = parent,
+  rs = rs,
+  edge = edge,
+  se = se,
+  nSim = nSim,
+  cores = cores
+)
+
+
+```
+ 
+# Saving panels
+
+```{r showSim, fig.height = 8, fig.width = 12}
+
+plotSim = function(sim) {
+  ggplot(sim) +
+    aes(x = x, y = y, col = cellType) +
+    geom_point(size = 0.5) +
+    scale_colour_manual(
+      values = c("#264788", "#C03530", "#E89A99"),
+      breaks = c("tumour_cells", "cd8_t_cells", "t_cells")
+    ) +
+    labs(title = NULL) +
+    theme_void() +
+    theme(legend.position = "none") +
+  geom_segment(aes(y = -50, yend = -50,
+                   xend = max(sim$x), x = max(sim$x) - 100),
+               linewidth = 1, lineend= "round", show.legend = F, col = "black")
+
+}
+
+plotCurve = function(simDat) {
+  simDat |> 
+  mutate(r = r) |>
+  Statial::kontextPlot() +
+  ylim(-35, 15) + 
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text = element_text(size  = 12),
+        axis.title.x = element_text(size = 16, vjust = -0.5),
+        axis.title.y = element_text(size = 16, vjust = 1.5)) +
+  labs(x = "Radius (µm)")
+}
+
+
+plotSig = plotSim(simSig)
+
+plotInsig = plotSim(simInsig)
+
+plotNull = plotSim(nullImage)
+
+
+sigCurvePlot = plotCurve(sigSimCurve) +
+    labs(y = NULL) 
+insigCurvePlot = plotCurve(insigSimCurve) +
+  labs(y = NULL)
+nullCurvePlot = plotCurve(nullSimCurve) +
+  theme(plot.margin = margin(0.5, 0,0,0, "cm"))
+
+
+(plotSig + plotInsig + plotNull) /
+  (sigCurvePlot + insigCurvePlot + nullCurvePlot)
+
+
+#ggsave("figures/simulation/kontextCurve.pdf", height = 6.5, width = 10)
+```
+
+
+
+# Supplementary: Monte carlo
+
+
+## Permutation vs Kontextual
+
+```{r permFunctions}
+#Function to randomise only specified cells in a ppp
+relabel = function(cells.ppp, labels = NULL) {
+  
+  #if labels are NULL relabel the whole image, otherwise relabel just the specified marks
+  if (is.null(labels)) {
+    relabeledCells =  spatstat.random::rlabel(cells.ppp)
+  } else {
+    #split up cells into subset which will be relabeled, and subset which wont be relabeled
+    notRelabel = cells.ppp %>% subset(!(marks %in% labels))
+    toRelabel = cells.ppp %>% subset(marks %in% labels)
+    
+    #relabel toRelabel cells
+    relabeled = spatstat.random::rlabel(toRelabel)
+    
+    #combine relabeled cells and non relabeled cells
+    relabeledCells = superimpose(notRelabel, relabeled)
+  }
+
+  return(relabeledCells)
+}
+
+
+
+#Function to calculate the average nearest neighbour from 1 cell type to another
+avgnn = function(cells.ppp, from, to) {
+  
+  #Find indexes of the cell we want to measure distances from
+  fromIndex = which(cells.ppp$marks == from)
+  
+  #Calculate the distances from each point in cells.ppp to nearest marks (for all marks)
+  distTo = spatstat.geom::nndist(cells.ppp, by = marks(cells.ppp)) %>% data.frame()
+  
+  #Select the "to" cells and the indexes of the "from" cells
+  avgnn = distTo[fromIndex, to] %>% mean()
+  
+  return(avgnn)
+}
+
+
+doPerm = function(PPP,
+                  from,
+                  to,
+                  parent,
+                  rep = 1000,
+                  cores = 1) {
+  
+  
+  images = replicate(1000, PPP, simplify = FALSE)
+  
+  relabeled = bplapply(images,
+                       function(x){relabel(x, labels = parent)},
+                       BPPARAM = MulticoreParam(workers = cores))
+  
+  avgnnSim = bplapply(relabeled, 
+                        function(x){ avgnn(x, from = from, to = to)},
+                       BPPARAM = MulticoreParam(workers = cores))
+  
+  avgnnSim = unlist(avgnnSim)
+  
+  ogval = avgnn(PPP,
+                from = from,
+                to = to)
+  
+  allRandom = append(avgnnSim, ogval) 
+  mean = mean(allRandom)
+  sd = sd(allRandom)
+  ogz = (ogval - mean)/sd
+  randomz = (avgnnSim - mean)/sd
+  
+  
+print((mean - ogval)/scale)
+
+allRandom %>% 
+  data.frame(val = ./scale) %>% 
+    ggplot(aes(x = val)) +
+    geom_histogram(fill = "#619CFF", color = "black", bins = 20) +
+    geom_vline(xintercept = ogval/scale, linetype = "dashed", size  = 1) +
+    xlab("Distance to immune cells (z-score)") +
+    ylab("Count") 
+  
+}
+
+```
+
+
+## Saving permuation plot
+
+
+```{r simPerm, fig.height = 10}
+
+set.seed(101)
+
+from = "cd8_t_cells"
+to = "tumour_cells"
+parent = c("cd8_t_cells", "t_cells")
+
+sigOw = Statial::makeWindow(simSig)
+insigOw = Statial::makeWindow(simInsig)
+nullOw = Statial::makeWindow(nullImage)
+
+sigPPP = ppp(x = simSig$x, y = simSig$y, marks = simSig$cellType, window = sigOw)
+insigPPP = ppp(x = simInsig$x, y = simInsig$y, marks = simInsig$cellType, window = insigOw)
+nullImagePPP = ppp(x = nullImage$x, y = nullImage$y, marks = nullImage$cellType, window = nullOw)
+
+#16.11 um
+sigPerm = doPerm(sigPPP,
+                 from = from,
+                 to = to,
+                 parent = parent, cores = 20)
+
+#-0.15
+insigPerm = doPerm(insigPPP,
+                 from = from,
+                 to = to,
+                 parent = parent, cores = 20)
+#-0.03
+nullPerm = doPerm(nullImagePPP,
+                 from = from,
+                 to = to,
+                 parent = parent, cores = 20)
+
+
+sigPerm = sigPerm +
+  labs(x = "Distance to tumour cells (µm)")
+
+insigPerm = insigPerm +
+  labs(x = "Distance to tumour cells (µm)",
+       y = NULL)
+
+nullPerm = nullPerm +
+  labs(x = "Distance to tumour cells (µm)",
+       y = NULL) +
+  theme(plot.margin = margin(0.5, 0,0,0, "cm"))
+
+
+(plotSig + plotInsig + plotNull) /
+(sigPerm + insigPerm + nullPerm)
+
+#ggsave("figures/simulation/permutation.pdf", height = 6.5, width = 10)
+```
+
+
+## Simulation timing
+
+```{r perm}
+set.seed(101)
+
+imageDf = nullImage
+ow = Statial::makeWindow(nullImage)
+imageSCE = SingleCellExperiment(
+  colData = imageDf
+)
+
+image = ppp(x = imageDf$x, y = imageDf$y, marks = imageDf$cellType, window = ow)
+
+start = Sys.time()
+
+images = replicate(1000, image, simplify = FALSE)
+
+relabeled = bplapply(images,
+                     function(x){relabel(x, labels = c("cd8_t_cells", "t_cells"))})
+
+avgnnSim = bplapply(relabeled, 
+                      function(x){ avgnn(x, from = "cd8_t_cells", to = "tumour_cells")})
+
+avgnnSim = unlist(avgnnSim)
+
+ogval = avgnn(image,
+              from = "cd8_t_cells",
+              to = "tumour_cells")
+
+allRandom = append(avgnnSim, ogval) 
+mean = mean(allRandom)
+sd = sd(allRandom)
+ogz = (ogval - mean)/sd
+randomz = (avgnnSim - mean)/sd
+
+end = Sys.time()
+
+
+print(paste("Permutation time:", round(end-start, 3)))
+
+randomz %>% 
+  data.frame(val = .) %>% 
+  ggplot(aes(x = val)) +
+  geom_histogram(fill = "#619CFF", color = "black", bins = 20) +
+  geom_vline(xintercept = ogz, linetype = "dashed", size  = 1) +
+  xlab("Distance to immune cells (z-score)") +
+  ylab("Count") 
+
+#ggsave("plot.png", height =5, width = 7)  
+start = Sys.time()
+
+Statial::Kontextual(imageSCE,
+            r = 50,
+            from = "cd8_t_cells",
+            to = "tumour_cells", 
+            parent = c("cd8_t_cells", "t_cells"))
+end = Sys.time()
+
+
+print(paste("Kontextual time:", round(end-start, 3)))
+```

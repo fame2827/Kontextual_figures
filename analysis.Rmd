@@ -48,9 +48,10 @@ library(survminer)
 library(SpatialDatasets)
 library(imcRtools)
 library(DIMPLE)
+library(crawdad)
 
-# devtools::load_all("/albona/nobackup2/farhana/Statial")
-# devtools::load_all("/albona/nobackup2/farhana/spicyR")
+devtools::load_all("/albona/nobackup2/farhana/Statial")
+devtools::load_all("/albona/nobackup2/farhana/spicyR")
 
 
 theme_set(theme_classic())
@@ -193,6 +194,7 @@ load("../keren/kerenKontext.RData")
 ```
 
 
+
 ## Image 6
 
 
@@ -270,7 +272,7 @@ Statial::kontextPlot() +
         axis.title.y = element_text(size = 18, vjust = 1.5)) +
   labs(x = "Radius (µm)")
 
-ggsave("figures/keren/kontextCurve6.pdf", height = 5, width = 7)
+#ggsave("figures/keren/kontextCurve6.pdf", height = 5, width = 7)
 ```
 
 ## Comparison to other methods - Null hypothesis test
@@ -282,6 +284,7 @@ ggsave("figures/keren/kontextCurve6.pdf", height = 5, width = 7)
 set.seed(101)
 iter = 1000
 scale = 2048/800
+Rs = c(25, 50, 75, 100)
 
 
 # Kontextual
@@ -312,7 +315,7 @@ spicyRRes = spicyR::getPairwise(
   cells = kerenSCE6,
   from = "Immune", 
   to = "p53+Tumour", 
-  Rs = c(25, 50, 75, 100)*scale
+  Rs = Rs*scale
 ) |> data.frame()
 
 
@@ -397,6 +400,46 @@ delaunayRes = imcRtools::testInteractions(
   filter(from_label == "Immune", to_label == "p53+Tumour")
 
 
+
+# Crawdad
+kerenDf6 = kerenSCE6 |> 
+  as_tibble() |> 
+  column_to_rownames("CellID")
+
+kerenSF6 <- crawdad:::toSF(pos = kerenDf6[,c("x", "y")],
+                          cellTypes = kerenDf6[, "cellType"])
+
+
+## shuffle cells to create null background
+shuffle_list <- crawdad:::makeShuffledCells(kerenSF6,
+                                            scales = c(100, 200, 300, 400, 500)*scale,
+                                            perms = 5,
+                                            ncores = 20,
+                                            seed = 101,
+                                            verbose = TRUE)
+
+#save(shuffle_list, file = "data/shuffle_list.rda")
+
+
+results <- crawdad::findTrends(kerenSF6,
+                               neighDist = 100*scale,
+                               shuffleList = shuffle_list,
+                               ncores = 20,
+                               verbose = TRUE,
+                               returnMeans = FALSE)
+
+dat <- crawdad::meltResultsList(results, withPerms = TRUE)
+
+dat |> 
+  filter(reference == "p53+Tumour") |> 
+  filter(neighbor == "Immune")
+
+## calculate the zscore for the multiple-test correction
+zsig <- correctZBonferroni(dat)
+## summary visualization
+vizRelationships(dat)
+
+
 # Final dataframe
 
 methodList = list(
@@ -416,6 +459,8 @@ methodCompareRes = data.frame(
 
 
 ```
+
+
 
 ### Permutation
 ```{r methodComparisonSD}
@@ -484,8 +529,7 @@ spicyRPerm = bplapply(kerenSCEShuffled, function(sce) {
       cells = sce,
       from = "Immune",
       to = "p53+Tumour",
-      Rs = c(50, 100) * scale,
-      edge = FALSE
+      Rs = c(25, 50, 75, 100)*scale
     ) |> data.frame()
   
   return(spicyRPermRes$Immune__p53.Tumour)
@@ -526,15 +570,16 @@ knnPerm = extractGraphIteractions(knnRes)
 expansionPerm = extractGraphIteractions(expansionRes)
 delaunayPerm = extractGraphIteractions(delaunayRes)
 
-methodCompareRes$permutedZscore = c(
-  (kontextRes$kontextual - mean(kontextualPerm))/sd(kontextualPerm),
-  (kontextRes$original - mean(lfunctionPerm))/sd(lfunctionPerm),
-  (inhomLRes$original - mean(inhomLPerm)/sd(inhomLPerm)),
-  (spicyRRes$Immune__p53.Tumour - mean(spicyRPerm))/sd(spicyRPerm),
-  (knnRes$ct - mean(knnPerm))/sd(knnPerm),
-  (expansionRes$ct - mean(expansionPerm))/sd(expansionPerm),
-  (delaunayRes$ct - mean(delaunayPerm))/sd(delaunayPerm),
-  (dimpleRes["Immune", "p53+Tumour"] - mean(dimplePerm))/sd(dimplePerm)
+
+methodCompareRes$permutedMean = c(
+  mean(kontextualPerm),
+  mean(lfunctionPerm),
+  mean(inhomLPerm),
+  mean(spicyRPerm),
+  mean(knnPerm),
+  mean(expansionPerm),
+  mean(delaunayPerm),
+  mean(dimplePerm)
   
 )
 
@@ -550,7 +595,21 @@ methodCompareRes$permutedSD = c(
   
 )
 
-#caption: sd came from permuting the values.
+methodCompareRes$permutedZscore = c(
+  (kontextRes$kontextual - mean(kontextualPerm))/sd(kontextualPerm),
+  (kontextRes$original - mean(lfunctionPerm))/sd(lfunctionPerm),
+  (inhomLRes$original - mean(inhomLPerm)/sd(inhomLPerm)),
+  (spicyRRes$Immune__p53.Tumour - mean(spicyRPerm))/sd(spicyRPerm),
+  (knnRes$ct - mean(knnPerm))/sd(knnPerm),
+  (expansionRes$ct - mean(expansionPerm))/sd(expansionPerm),
+  (delaunayRes$ct - mean(delaunayPerm))/sd(delaunayPerm),
+  (dimpleRes["Immune", "p53+Tumour"] - mean(dimplePerm))/sd(dimplePerm)
+  
+)
+
+
+methodCompareRes
+
 
 
 ```
@@ -564,8 +623,8 @@ plotKontextScatter = function(kontextResult, r, highlightVal = "test") {
   group_by(test) |> 
   mutate(original = ifelse(original == -r, 0, original)) |> 
   mutate(kontextual = ifelse(kontextual == -r, 0, kontextual)) |> 
-  summarise(original = mean(original, na.rm = TRUE)/sd(original, na.rm = TRUE),
-            kontextual = mean(kontextual, na.rm = TRUE)/sd(kontextual, na.rm = TRUE)) |>
+  summarise(original = mean(original, na.rm = TRUE),
+            kontextual = mean(kontextual, na.rm = TRUE)) |>
   ggplot(aes(x = original, y = kontextual, text = test)) +
   geom_point(size = 4) +
   gghighlight::gghighlight(test == highlightVal,
@@ -632,6 +691,103 @@ showKontextual = function(data, kontextMat, image, relationship){
 
 
 ### Scatter plot - Kontextual 
+```{r}
+ggplotly(plotKontextScatter(kerenKontext))
+
+
+kerenKontext |> 
+  filter(test == "Keratin+ Tumour__CD8__immune") |> 
+  ggplot(aes(x = kontextual)) +
+  geom_boxplot()
+
+
+kerenKontext |> 
+  filter(test == "Keratin+ Tumour__CD8__immune") |> 
+  arrange(desc(kontextual))
+
+kerenSCE |> 
+  select(imageID, tumour_type) |> 
+  unique()
+
+
+
+p = kerenKontext |> 
+  ggplot(aes(x = original, y = kontextual, text = test)) +
+  geom_point(size = 4) +
+  gghighlight::gghighlight(test == "Keratin+ Tumour__CD8__immune",
+                           unhighlighted_params = list(size = 3)) +
+  annotate("rect", xmin = -Inf, xmax = 0, ymin = 0, ymax = Inf,
+           alpha=0.15, fill="#E25758") +
+  annotate("rect", xmin = 0, xmax = Inf, ymin = -Inf, ymax = 0,
+           alpha=0.15, fill ="#E25758") +
+  labs(x = "L-function", y = "Kontextual") +
+  geom_vline(xintercept = 0, col = "red", linetype = "dashed", alpha = 0.5) +
+  geom_hline(yintercept = 0, col = "red", linetype = "dashed", alpha = 0.5) +
+  theme_bw() +
+  axis_theme
+
+ggplotly(p)
+
+
+kerenSCE |> 
+  select(imageID, Survival_days_capped., event) |> 
+  unique()
+
+
+
+kerenKontext |> 
+  filter(test == "Keratin+ Tumour__CD8__immune") |> 
+  arrange(desc(kontextual))
+
+kerenKontext |> 
+  filter(test == "Keratin+ Tumour__Keratin+ Tumour__tumour")
+
+kerenKontext$test |> unique() |> sort()
+
+
+tumourRelationships = Statial::Kontextual(
+  cells = kerenSCE,
+  r = 100,
+  from = "Keratin+ Tumour",
+  to = "Keratin+ Tumour",
+  parent = tumour,
+  cores = 20
+)
+
+tumourRelationships |> 
+  arrange(original)
+
+
+kerenSCE |> 
+  filter(imageID == "5") |> 
+  pull(cellType) |> 
+  table() 
+
+
+kerenSCE |> 
+  filter(imageID == "35") |> 
+  ggplot(aes(x = x, y = y, col = cellType)) +
+geom_point()
+
+
+kerenSCE |> 
+  filter(imageID == "35") |> 
+  pull(cellType) 
+
+
+topCells = tumourRelationships |> 
+  arrange(original) |> pull(imageID)
+
+table(kerenSCE$imageID, kerenSCE$cellType) |> 
+  data.frame() |> 
+  filter(Var2 == "Keratin+ Tumour") |> 
+  left_join(select(tumourRelationships, original, imageID), by = c("Var1" = "imageID")) |> 
+  left_join(unique(select(kerenSCE, imageID, tumour_type)), by = c("Var1" = "imageID")) |> 
+  arrange(desc(original) ) |> 
+  ggplot(aes(x = original, y = Freq)) +
+  geom_point()
+```
+
 
 ```{r savingImage5, include = FALSE, eval = FALSE}
 cellcounts = kerenSCE |> 
@@ -663,7 +819,104 @@ p = kerenKontext |>
 
 ggplotly(p)
 
-ggsave("figures/keren/Image5scatterPlot.pdf", height = 6, width = 7, dpi = 400)
+#ggsave("figures/keren/Image5scatterPlot.pdf", height = 6, width = 7, dpi = 400)
+
+
+ showKontextual(
+  kerenSCE,
+  kerenKontext,
+  image = 5,
+  relationship = "DC/Mono__CD8__immune"
+)
+```
+
+
+
+```{r}
+ggplotly(plotKontextScatter(kerenKontext))
+
+
+
+
+
+scatterImage = function(chosenImage = "5") {
+  
+  cellcounts = kerenSCE |> 
+  filter(imageID == chosenImage) |> 
+  pull(cellType) |> 
+  table() 
+
+
+p = kerenKontext |> 
+  filter(imageID == chosenImage) |> 
+  separate(test, into = c("from", "to", "parent"), sep = "__") |> 
+ # filter(parent == "immune") |> 
+  mutate(test = paste(from, to, parent, sep = "__")) |> 
+  filter(from %in% names(cellcounts[cellcounts >50]), to %in% names(cellcounts[cellcounts >50])) |> 
+  ggplot(aes(x = original, y = kontextual, text = test)) +
+  geom_point(size = 4) +
+  annotate("rect", xmin = -Inf, xmax = 0, ymin = 0, ymax = Inf,
+           alpha=0.15, fill="#E25758") +
+  annotate("rect", xmin = 0, xmax = Inf, ymin = -Inf, ymax = 0,
+           alpha=0.15, fill ="#E25758") +
+  labs(x = "L-function", y = "Kontextual") +
+  geom_vline(xintercept = 0, col = "red", linetype = "dashed", alpha = 0.5) +
+  geom_hline(yintercept = 0, col = "red", linetype = "dashed", alpha = 0.5) +
+  theme_bw() +
+  axis_theme
+  
+  return(p)
+}
+
+
+image = "39"
+
+ggplotly(scatterImage(chosenImage = image))
+
+
+showKontextual(kerenSCE,
+               kerenKontext,
+               image = image,
+               relationship = "Neutrophils__CD4__tcells")
+
+#7 "Keratin+ Tumour__Neutrophils__immune"
+#12 "Keratin+ Tumour__Tregs__tcells" but looks compartmentalised still
+# 20 "Keratin+ Tumour__CD8__immune" is really cool
+
+# 21 "Keratin+ Tumour__Neutrophils__immune" decent
+
+# 29 Keratin+ Tumour__CD3__tcells 
+# 38 "Keratin+ Tumour__Mono/Neu__immune"
+```
+
+
+```{r}
+showKontextual(kerenSCE,
+               kerenKontext,
+               image = 7,
+               relationship = "Keratin+ Tumour__Neutrophils__immune") 
+
+showKontextual(kerenSCE,
+               kerenKontext,
+               image = 12,
+               relationship =  "Keratin+ Tumour__Tregs__tcells") 
+showKontextual(kerenSCE,
+               kerenKontext,
+               image = 20,
+               relationship = "Keratin+ Tumour__CD8__immune")
+showKontextual(kerenSCE,
+               kerenKontext,
+               image = 21,
+               relationship = "Keratin+ Tumour__Neutrophils__immune")
+showKontextual(kerenSCE,
+               kerenKontext,
+               image = 29,
+               relationship = "Keratin+ Tumour__CD3__tcells")
+showKontextual(kerenSCE,
+               kerenKontext,
+               image = 38,
+               relationship = "Keratin+ Tumour__Mono/Neu__immune")
+
 ```
 
 ### Image 5
@@ -685,7 +938,7 @@ p +
                    xend = max(kerenSCE6Plot$x), x = max(kerenSCE6Plot$x) - 100*scale),
                linewidth = 1, lineend= "round", show.legend = F, col = "black")
 
-ggsave("figures/keren/Image5.pdf", device = "pdf", dpi = 400, height = 5, width = 6)
+#ggsave("figures/keren/Image5.pdf", device = "pdf", dpi = 400, height = 5, width = 6)
 ```
 
 
@@ -1707,18 +1960,18 @@ outcome = kerenRecurrence
 
 coxTests <- function(measurementMat, outcome, remove = c(NA)) {
   result <- lapply(colnames(measurementMat), function(test) {
-    measurementCol <- measurementMat[[test]]
+    measurementCol <- measurementMat[, test]
     ind <- !(measurementCol %in% remove)
-    fit <- coxph(surv ~ measurementCol, subset = ind)
+    fit <- coxph(outcome ~ measurementCol, subset = ind)
     result <- summary(fit)$coefficients[1, c(1, 3, 5)]
   })
 
 
   result <- result |>
     dplyr::bind_rows() |>
-    dplyr::mutate(test = names(measurementMat)) |>
+    dplyr::mutate(test = colnames(measurementMat)) |>
     dplyr::rename("se.coef" = "se(coef)", "p.value" = "Pr(>|z|)") |>
-    dplyr::select(test, coef, se.coef, p.value) |>
+    dplyr::select(test, coef, se.coef, p.value) |> 
     dplyr::arrange(p.value)
 
   return(result)
@@ -2129,3 +2382,4 @@ p = xeniumBreastKontext100 |>
   pivot_longer(cols = c(original, kontextual), names_to =  "test") |> 
   mutate(test = case_when(test == "kontextual" ~ "Kontextual",
                           test == "original" ~ "L-function"),
+         

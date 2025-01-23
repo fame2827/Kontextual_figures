@@ -1,0 +1,281 @@
+---
+title: "Figure 2"
+author: "Farhan Ameen"
+date: "`r Sys.Date()`"
+output:
+  html_document: 
+    toc: true
+    code_folding: hide
+    self_contained: yes
+    theme: spacelab
+editor_options: 
+  chunk_output_type: inline
+---
+
+
+
+
+
+
+
+# Panel A: Xenium breast cancer image
+
+[paper](https://www.nature.com/articles/s41467-023-43458-x)
+7500 x 5500um
+
+## Adding BIDcell annotation
+
+```{r}
+xeniumBreastSPE <- load("data/xeniumBreastSPE.rda")
+
+
+cellType_colours = c(
+  "Macrophage" = "#EF5A9D",
+  "CD163+ Macrophage" =  "#F397C0",
+  "IRF7+ DC" = "#C594BF",
+  "LAMP3+ DC" = "#DFCDE4",
+  "CD8 T" = "#ff891c",
+  "CD4 T" = "#A10037",
+  "B Cells" = "#FACB12",
+  "Plasma" = "#E1C239",
+  "Mast cells" = "#f7f79e",
+  "DCIS 1" = "#C9EBFB",
+  "DCIS 2" = "#3F84AA",
+  "Invasive tumour" = "#164863",
+  "VWF+ Endothelial" = "#65A83E",
+  "STAB2+ Endothelial" = "#354E23",
+  "ACTA2+ Myoepi" = "#C3C388" ,
+  "KRT15+ Myoepi" = "#647a4f",
+  "Fibroblast" = "#CDE088",
+  "Unassigned" = "#e6e6e6"
+)
+
+
+xeniumXY = spatialCoords(xeniumBreastSPE) |> 
+  data.frame()
+
+xeniumBreastSPE$x = xeniumXY$cell_centroid_x
+xeniumBreastSPE$y = xeniumXY$cell_centroid_y
+
+
+
+
+xeniumBreastSPE = xeniumBreastSPE |> 
+  rename("cellType" = "scClassify") |> 
+   mutate(cellType = case_when(cellType == "SCGB2A2+ Malignant" ~ "DCIS 1",
+                              cellType == "CRABP2+ Malignant" ~ "DCIS 2",
+                              cellType == "ECM1+ Malignant" ~ "Invasive tumour",
+                              cellType == "unassigned" ~ "Unassigned",
+                              cellType == "Firoblast" ~ "Fibroblast",
+                              TRUE ~ cellType)) |> 
+  mutate(cellTypeFactor = factor(cellType, levels = names(cellType_colours)))
+
+xeniumBreastSPE$imageID = 1
+
+
+```
+
+## Saving Xenium image
+```{r}
+p = xeniumBreastSPE |>
+  arrange((cellTypeFactor)) |> 
+  ggplot(aes(x = x, y = y, col = cellTypeFactor)) +
+  geom_point(size = 0.01) +
+  scale_colour_manual(values = cellType_colours) +
+  labs(colour = "Cell Type") +
+  geom_segment(aes(y = -100, yend = -100,
+                     xend = max(xeniumBreastSPE$x), x = max(xeniumBreastSPE$x) - 1000),
+                 linewidth = 1, lineend= "round", show.legend = F, col = "black") +
+  guides(colour=guide_legend(override.aes=list(size= 4))) +
+  theme_void()
+
+p
+
+#ggsave(here("finalRMD/figures/xenium/wholeImage.pdf"), dpi = 400, height = 5, width = 8)
+```
+
+
+## Creating heirarchy tree
+```{r}
+macrophages <- c("Macrophage", "CD163+ Macrophage")
+t_cells <- c("CD8 T", "CD4 T")
+dendritic_cells <- c("IRF7+ DC", "LAMP3+ DC")
+b_cells <- c("B Cells", "Plasma")
+immune = c( "Mast cells", b_cells, dendritic_cells, t_cells, macrophages)
+
+# Endothelial cells
+endothelial <- c("VWF+ Endothelial", "STAB2+ Endothelial")
+
+# Myoepithelial cells
+myoepi <- c("ACTA2+ Myoepi", "KRT15+ Myoepi")
+structural = c("Fibroblast",endothelial, myoepi)
+
+# Malignant cells
+#malignant <- c("ECM1+ Malignant", "SCGB2A2+ Malignant", "CRABP2+ Malignant")
+malignant = c("Invasive tumour", "DCIS 1", "DCIS 2")
+
+all = c("Unassigned", macrophages, t_cells, dendritic_cells, b_cells, immune,
+        endothelial, myoepi, structural, malignant)
+
+parentDf = Statial::parentCombinations(
+  all = all, macrophages, t_cells, dendritic_cells, b_cells, immune,
+        endothelial, myoepi, structural, malignant
+)
+
+
+```
+
+
+
+# Panel B: Tumour - CD8 T cell Kontext curve.
+
+```{r}
+xeniumTumour = xeniumBreastSPE |> 
+  mutate(cellType = case_when(cellType %in% malignant ~ "tumour",
+                              TRUE ~ cellType))
+
+
+
+xeniumCurve = Statial::kontextCurve(
+  cells = xeniumTumour,
+  image = 1,
+  from = "tumour",
+  to = "CD8 T",
+  parent = immune,
+  edge = TRUE,
+  rs = seq(10, 120, 10),
+  se = TRUE,
+  cores = 40
+)
+
+
+#saveRDS(xeniumCurve, file = "xenium/xeniumCurve.rds")
+
+#xeniumCurve = readRDS(xenium/xeniumCurve.rds")
+
+
+p = Statial::kontextPlot(xeniumCurve) +
+  theme_classic() +
+  axis_theme +
+  theme(legend.position = "none") +
+  scale_x_continuous(breaks =  seq(20, 120, 20)) +
+  labs(x = "Radius (mm)")
+
+ggsave("figures/xenium/tumour__CD8 T__immune/Curve.pdf",
+       dpi = 400, height = 5, width = 7, plot = p)
+
+
+```
+
+
+# Panel C: Tumour CD8 Image
+
+
+```{r}
+
+xeniumCD8Tumour = xeniumTumour |> 
+   mutate(cellType = case_when(cellType %in% immune[immune != "CD8 T"] ~ "immune",
+                              TRUE ~ cellType)) |> 
+  filter(cellType %in% c("CD8 T", "immune", "tumour")) |> 
+  mutate(cellType = factor(cellType, levels = c("CD8 T", "tumour",  "immune"))) |> 
+  arrange(desc(cellType))
+
+#colours = list("CD8 T" = "#164863", "tumour" = "#FF9130", "immune" = "#D7D8D8")
+colours = list("CD8 T" = "#E25758", "tumour" = "#404040", "immune" = "#D7D8D8")
+
+
+p = xeniumCD8Tumour |> 
+  ggplot(aes(x = x, y = y, col = cellType)) +
+  scale_color_manual(values = colours) +
+  geom_point(size = 0.3) +
+  theme_void() +
+  theme(legend.position = "none") +
+  geom_segment(aes(y = -100, yend = -100,
+                     xend = max(xeniumCD8Tumour$x), x = max(xeniumCD8Tumour$x) - 1000),
+                 linewidth = 1, lineend= "round", show.legend = F, col = "black") 
+
+
+p 
+
+
+ggsave(here("finalRMD/figures/xenium/tumour__CD8 T__immune/Image.pdf"),
+       dpi = 400, height = 5, width = 7, plot = p)
+```
+
+# Panel D: Individual tumour - cd8 t barplot
+
+## Calculating indivual values
+```{r}
+
+xeniumBreastKontext100 = Statial::Kontextual(
+  cells = xeniumBreastSPE,
+  r = 100,
+  parentDf = parentDf,
+  cores = 40
+)
+
+#saveRDS(xeniumBreastKontext100, file = here("finalRMD/xenium/xeniumBreastKontext100.RDS"))
+#xeniumBreastKontext100 = readRDS(here("finalRMD/xenium/xeniumBreastKontext100.RDS"))
+
+```
+
+## Plotting + saving barplot
+
+```{r}
+# Relationships to save
+xeniumBreastKontext100 = readRDS(file = "xenium/xeniumBreastKontext100.RDS")
+
+toHighlight = c("DCIS 1__CD8 T__immune", "DCIS 2__CD8 T__immune", "Invasive tumour__CD8 T__immune")
+
+p = xeniumBreastKontext100 |> 
+  filter(test %in% toHighlight) |> 
+  separate(test, into = c("tumour", "cd8t", "parent"), sep = "__") |> 
+  pivot_longer(cols = c(original, kontextual), names_to =  "test") |> 
+  mutate(test = case_when(test == "kontextual" ~ "Kontextual",
+                          test == "original" ~ "L-function"),
+         test = factor(test, levels = c("L-function", "Kontextual"))) |> 
+  ggplot(aes(x = tumour, y = value, fill = tumour)) +
+  geom_col() +
+  labs( y = "Relationship value", fill = "Tumour type") +
+  scale_fill_manual(values = cellType_colours) +
+  facet_grid(~test)  +
+  theme_bw() +
+  axis_theme +
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        legend.position = "none",
+        strip.background = element_rect(fill = "white", size = 0, linetype = "blank"),
+        strip.text.x = element_text(size = 20,
+                                    color = "black")) 
+  
+p
+  
+ggsave( here("finalRMD/figures/xenium/tumour__CD8 T__immune/Barplot.pdf"), p , dpi = 400, height = 5, width = 5)
+
+```
+
+
+# Panel E: Individual tumour image
+```{r}
+xeniumIndTumour = xeniumBreastSPE |> 
+  filter(cellType %in% c(malignant, immune)) |> 
+  mutate(cellType = case_when(cellType %in% immune[immune != "CD8 T"] ~ "Immune",
+                              TRUE ~ cellType)) |> 
+  mutate(cellType = factor(cellType, levels = c("CD8 T", "DCIS 2", "DCIS 1", "Invasive tumour", "Immune"))) |> 
+  arrange(desc(cellType))
+
+
+
+p = xeniumIndTumour |> 
+  ggplot(aes(x = x, y = y, color = cellType)) +
+  geom_point(size = 0.3) +
+  scale_colour_manual(values = append(cellType_colours, list("Immune" = "#D7D8D8"))) +
+  theme_void() +
+  theme(legend.position = "none") +
+  geom_segment(aes(y = -100, yend = -100,
+                     xend = max(xeniumCD8Tumour$x), x = max(xeniumCD8Tumour$x) - 1000),
+                 linewidth = 1, lineend= "round", show.legend = F, col = "black") 
+
+ggsave( here("finalRMD/figures/xenium/tumour__CD8 T__immune/individual_image.pdf"), p , dpi = 400, height = 5, width = 7)
+```
