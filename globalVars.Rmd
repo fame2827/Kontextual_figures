@@ -213,9 +213,10 @@ kerenSCE6$cellType[kerenSCE6$Group == 2] = "Immune"
 # Saving as csv for python analysis
 kerenData = kerenSCE6 |> 
   as_tibble() |> 
-  select(CellID, x, y, cellType)
+  select(CellID, x, y, cellType) |> 
+  column_to_rownames("CellID")
 
-write.csv(kerenData, "keren6Data.csv")
+write.csv(kerenData, "data/keren6Data.csv")
 ```
 
 
