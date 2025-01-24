@@ -251,6 +251,16 @@ image21Plot = p +
                    xend = max(kerenSCE6Plot$x), x = max(kerenSCE6Plot$x) - 100*scale),
                linewidth = 1, lineend= "round", show.legend = F, col = "black")
 
+image21Immune = kerenSCE |> 
+  filter(imageID == "21") |> 
+  filter(cellType %in% immune) |> 
+  ggplot(aes(x = x, y = y)) +
+  geom_point(col = "#D7D8D8", size = 2.3) +
+  theme_void() +
+  theme(legend.position = "none") +
+  geom_segment(aes(y = -100, yend = -100,
+                   xend = max(kerenSCE6Plot$x), x = max(kerenSCE6Plot$x) - 100*scale),
+               linewidth = 1, lineend= "round", show.legend = F, col = "black")
 
 image21density = kerenSCE |> 
   filter(imageID == "21") |> 
@@ -258,11 +268,12 @@ image21density = kerenSCE |>
   ggplot(aes(x = x, y = y)) +
   geom_density_2d_filled(bins = 20) +
   theme_void() +
-  theme(legend.position = "none")
+  theme(legend.position = "none") 
 
 
 
 ggsave("figures/keren/Image21.pdf", plot = image21Plot, device = "pdf", dpi = 400, height = 5, width = 6)
+ggsave("figures/keren/Image21Immune.pdf", plot = image21Immune, device = "pdf", dpi = 400, height = 5, width = 6)
 ggsave("figures/keren/Image21Density.pdf", plot = image21density, device = "pdf", dpi = 400, height = 5, width = 6)
 ```
 
@@ -404,7 +415,7 @@ kerenSF6 <- crawdad:::toSF(pos = kerenDf6[,c("x", "y")],
 
 ## shuffle cells to create null background
 shuffle_list <- crawdad:::makeShuffledCells(kerenSF6,
-                                            scales = Rs*scale,
+                                            scales = c(100, 200, 300, 400, 500)*scale,
                                             perms = 5,
                                             ncores = 20,
                                             seed = 101,
@@ -414,23 +425,20 @@ shuffle_list <- crawdad:::makeShuffledCells(kerenSF6,
 
 
 results <- crawdad::findTrends(kerenSF6,
-                               neighDist = 100*scale,
+                               neighDist = 50*scale,
                                shuffleList = shuffle_list,
                                ncores = 20,
                                verbose = TRUE,
-                               returnMeans = TRUE)
+                               returnMeans = FALSE)
 
 dat <- crawdad::meltResultsList(results, withPerms = TRUE)
 
-dat |> 
+crawdadScore = dat |> 
   filter(reference == "p53+Tumour") |> 
-  filter(neighbor == "Immune")
-
-## calculate the zscore for the multiple-test correction
-zsig <- correctZBonferroni(dat)
-## summary visualization
-vizRelationships(dat)
-
+  filter(neighbor == "Immune") |> 
+  filter(scale == 1280) |> 
+  pull(Z) |> 
+  mean()
 
 
 # Final dataframe
@@ -443,7 +451,8 @@ methodList = list(
   "knn" = knnRes$ct,
   "expansion" = expansionRes$ct,
   "delaunay" = delaunayRes$ct,
-  "DIMPLE" = dimpleRes["Immune", "p53+Tumour"]
+  "DIMPLE" = dimpleRes["Immune", "p53+Tumour"],
+  "CRAWDAD" = crawdadScore
 )
 
 methodCompareRes = data.frame(
@@ -570,7 +579,8 @@ methodCompareRes$permutedMean = c(
   mean(knnPerm),
   mean(expansionPerm),
   mean(delaunayPerm),
-  mean(dimplePerm)
+  mean(dimplePerm),
+  NA # Crawdad
   
 )
 
@@ -582,7 +592,8 @@ methodCompareRes$permutedSD = c(
   sd(knnPerm),
   sd(expansionPerm),
   sd(delaunayPerm),
-  sd(dimplePerm)
+  sd(dimplePerm),
+  NA # Crawdad
   
 )
 
@@ -594,7 +605,8 @@ methodCompareRes$permutedZscore = c(
   (knnRes$ct - mean(knnPerm))/sd(knnPerm),
   (expansionRes$ct - mean(expansionPerm))/sd(expansionPerm),
   (delaunayRes$ct - mean(delaunayPerm))/sd(delaunayPerm),
-  (dimpleRes["Immune", "p53+Tumour"] - mean(dimplePerm))/sd(dimplePerm)
+  (dimpleRes["Immune", "p53+Tumour"] - mean(dimplePerm))/sd(dimplePerm),
+  crawdadScore
   
 )
 

@@ -422,7 +422,7 @@ shuffle_list <- crawdad:::makeShuffledCells(kerenSF6,
 
 
 results <- crawdad::findTrends(kerenSF6,
-                               neighDist = 100*scale,
+                               neighDist = 50*scale,
                                shuffleList = shuffle_list,
                                ncores = 20,
                                verbose = TRUE,
@@ -430,15 +430,18 @@ results <- crawdad::findTrends(kerenSF6,
 
 dat <- crawdad::meltResultsList(results, withPerms = TRUE)
 
-dat |> 
+crawdataResults = dat |> 
   filter(reference == "p53+Tumour") |> 
-  filter(neighbor == "Immune")
+  filter(neighbor == "Immune") |> 
+  filter(scale == 1280)
 
-## calculate the zscore for the multiple-test correction
-zsig <- correctZBonferroni(dat)
-## summary visualization
-vizRelationships(dat)
+crawdadZScore = crawdataResults 
+  pull(Z) |> 
+  mean()
 
+crawdadZSD = crawdataResults |> 
+  pull(Z) |> 
+  sd()
 
 # Final dataframe
 
@@ -450,7 +453,8 @@ methodList = list(
   "knn" = knnRes$ct,
   "expansion" = expansionRes$ct,
   "delaunay" = delaunayRes$ct,
-  "DIMPLE" = dimpleRes["Immune", "p53+Tumour"]
+  "DIMPLE" = dimpleRes["Immune", "p53+Tumour"],
+  "CRAWDAD" = crawdadZScore
 )
 
 methodCompareRes = data.frame(
@@ -579,7 +583,8 @@ methodCompareRes$permutedMean = c(
   mean(knnPerm),
   mean(expansionPerm),
   mean(delaunayPerm),
-  mean(dimplePerm)
+  mean(dimplePerm),
+  NA # Crawdad
   
 )
 
@@ -591,7 +596,8 @@ methodCompareRes$permutedSD = c(
   sd(knnPerm),
   sd(expansionPerm),
   sd(delaunayPerm),
-  sd(dimplePerm)
+  sd(dimplePerm),
+  crawdadZSD # Crawdad
   
 )
 
@@ -603,7 +609,8 @@ methodCompareRes$permutedZscore = c(
   (knnRes$ct - mean(knnPerm))/sd(knnPerm),
   (expansionRes$ct - mean(expansionPerm))/sd(expansionPerm),
   (delaunayRes$ct - mean(delaunayPerm))/sd(delaunayPerm),
-  (dimpleRes["Immune", "p53+Tumour"] - mean(dimplePerm))/sd(dimplePerm)
+  (dimpleRes["Immune", "p53+Tumour"] - mean(dimplePerm))/sd(dimplePerm),
+  crawdadScore
   
 )
 

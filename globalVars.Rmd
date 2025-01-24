@@ -210,6 +210,12 @@ kerenSCE6$cellType[kerenSCE6$cellType %in% c("Tumour", "Keratin+ Tumour") &  p53
 
 kerenSCE6$cellType[kerenSCE6$Group == 2] = "Immune"
 
+# Saving as csv for python analysis
+kerenData = kerenSCE6 |> 
+  as_tibble() |> 
+  select(CellID, x, y, cellType)
+
+write.csv(kerenData, "keren6Data.csv")
 ```
 
 
