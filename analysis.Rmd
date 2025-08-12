@@ -1014,6 +1014,60 @@ showKontextual(
 
 ```
 
+## Simulation on one cell thick context
+
+
+### Testing edge effects
+
+```{r edgeCase}
+#set.seed(101)
+
+# Parameters
+radius <- 5  # Radius of the circle
+center_x <- 0  # x-coordinate of the center
+center_y <- 0  # y-coordinate of the center
+n <- 200  # Number of points to generate (more points for smoother density)
+
+# Generate angles uniformly distributed between 0 and 2*pi
+angles <- seq(0, 2 * pi, length.out = n)
+
+# Convert polar coordinates to Cartesian coordinates
+x <- center_x + radius * cos(angles)
+y <- center_y + radius * sin(angles)
+
+
+circleDf = data.frame(x = x, y = y) |> 
+  mutate(cellType = "A") 
+
+
+randomDf = data.frame(
+  x = runif(4000, min = -10, max = 10),
+  y = runif(4000, min = -10, max = 10),
+  cellType = "B")
+
+thinDf = rbind(circleDf, randomDf) |> 
+  mutate(imageID = 1)
+
+thinDf |> 
+  ggplot(aes(x = x, y =y, col = cellType)) +
+  geom_point() +
+  theme_classic()
+
+
+thinSCE = SingleCellExperiment(t(thinDf))
+colData(thinSCE) = DataFrame(thinDf)
+
+
+thinKontext = Statial::Kontextual(
+  cells = thinSCE,
+  from = "B",
+  to = "A",
+  parent = c("A", "B"),
+  r = 1
+)
+thinKontext
+```
+
 
 
 ### Kontextual (treekor)

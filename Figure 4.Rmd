@@ -647,3 +647,380 @@ performance = lapply(kerenSurvClassification, function(res){
 performance
 ```
 
+
+# Supplementary: Patient 9 stability test
+
+
+```{r patient9 stability}
+
+
+otherImmune = immune[immune != "CD8"]
+
+kerenSCE9 = kerenSCE |> 
+  filter(imageID == 9) |> 
+  mutate(cellType = case_when(cellType %in% otherImmune ~ "other immune",
+                   TRUE ~ cellType))
+
+tumourIDX = kerenSCE9 |> 
+  filter(cellType == "Keratin+ Tumour") |> 
+  pull(CellID)
+
+CD8IDX = kerenSCE9 |> 
+  filter(cellType == "CD8") |> 
+  pull(CellID)
+
+immuneIDX = kerenSCE9 |> 
+  filter(cellType == "other immune") |> 
+  pull(CellID)
+
+contextIDX = kerenSCE9 |> 
+  filter(cellType %in% c("other immune", "CD8")) |> 
+  pull(CellID)
+
+
+stabilityPerm = function(toRemoveList,
+                         cellIDX,
+                         iter,
+                         from = "Keratin+ Tumour",
+                         to = "CD8", 
+                         val = "kontextual",
+                         cores) {
+  
+  
+  nCell = length(cellIDX)
+  
+  permutationRes = lapply(toRemoveList, function(toRemove) {
+    
+    bplapply(1:iter, function(x) {
+      nRemove = round(nCell * toRemove)
+      removeID = sample(cellIDX, nRemove)
+      
+      sce = kerenSCE9 |>
+        filter(!(CellID %in% removeID))
+      
+      kontextResult = Statial::Kontextual(
+        sce,
+        from = from,
+        to = to,
+        parent = c("CD8", "other immune"),
+        r = 100
+      )
+      
+      if (val == "kontextual") {
+        return(kontextResult$kontextual)
+      } else{
+        return(kontextResult$original)
+      }
+      
+    }, BPPARAM = BiocParallel::MulticoreParam(workers = cores)) |>
+      unlist()
+    
+  })
+  
+  names(permutationRes) = toRemoveList
+  
+  return(permutationRes)
+  
+}
+
+
+set.seed(101)
+toRemoveList = c(0.1, 0.3, 0.5, 0.7, 0.9)
+iter = 50
+cores = 20
+
+
+immuneResultsKontext = stabilityPerm(toRemoveList = toRemoveList,
+                              cellIDX = immuneIDX,
+                              iter = iter,
+                              cores = cores)
+
+
+
+tumourResultsKontext = stabilityPerm(toRemoveList = toRemoveList,
+                              cellIDX = tumourIDX,
+                              iter = iter,
+                              cores = cores)
+
+
+CD8ResultsKontext = stabilityPerm(toRemoveList = toRemoveList,
+                              cellIDX = CD8IDX,
+                              iter = iter,
+                              cores = cores)
+
+
+contextResultsKontext = stabilityPerm(toRemoveList = toRemoveList,
+                              cellIDX = contextIDX,
+                              iter = iter,
+                              cores = cores)
+
+
+immuneResultsOriginal = stabilityPerm(toRemoveList = toRemoveList,
+                              cellIDX = immuneIDX,
+                              iter = iter,
+                              #to = "other immune",
+                              val = "original",
+                              cores = cores)
+
+
+
+tumourResultsOriginal = stabilityPerm(toRemoveList = toRemoveList,
+                              cellIDX = tumourIDX,
+                              iter = iter,
+                              val = "original",
+                              cores = cores)
+
+
+CD8ResultsOriginal = stabilityPerm(toRemoveList = toRemoveList,
+                              cellIDX = CD8IDX,
+                              iter = iter,
+                              val = "original",
+                              cores = cores)
+
+contextResultsOriginal = stabilityPerm(toRemoveList = toRemoveList,
+                              cellIDX = contextIDX,
+                              iter = iter,
+                              val = "original",
+                              cores = cores)
+
+observedResult = Statial::Kontextual(
+        kerenSCE9,
+        from = "Keratin+ Tumour",
+        to = "CD8",
+        parent = c("CD8", "other immune"),
+        r = 100
+      )
+```
+
+
+
+
+## Chaning window size
+
+```{r}
+
+
+bigWindowSizes = c(1.25, 1.5, 2, 2.5, 3)
+smallWindowSizes = c(0.33, 0.4, 0.5, 0.66, 0.8)
+iter = 50
+set.seed(100)
+
+windowData = kerenSCE9 |> 
+  as_tibble() |> 
+  dplyr::select(x, y, cellType, imageID)
+
+maxX = max(windowData$x)
+maxY = max(windowData$y)
+
+
+bigWindowDfs = lapply(bigWindowSizes, function(size){
+  newDat = windowData |> 
+    add_row(x = maxX*size, y = maxY*size, cellType = "windowTest" , imageID = "9")
+  
+  return(newDat)
+  })
+
+
+
+bigWindowResults = lapply(windowDfs, function(df){
+  res = Kontextual(
+    df,
+    r = 100,
+    from = "Keratin+ Tumour",
+    to = "CD8",
+    parent = c("CD8", "other immune")
+  )
+  
+  return(res)
+}) |> 
+  bind_rows() |> 
+  mutate(windowSize = windowSizes)
+
+
+
+smallWindowResults = lapply(smallWindowSizes, function(size){
+  xSize = maxX*size
+  ySize = maxY*size
+  
+  maxSizeX = maxX - xSize
+  maxSizeY = maxY - ySize
+  
+  sizeResults = bplapply(1:iter, function(x) {
+        
+      xStart = sample(0:maxSizeX, 1)
+      yStart = sample(0:maxSizeY, 1)
+      
+      data = windowData |> 
+        filter(x > xStart & x < (xStart + xSize)) |> 
+        filter(y > yStart & y < (yStart + ySize))
+      
+      kontextResult = Statial::Kontextual(
+        data,
+        from = "Keratin+ Tumour",
+        to = "CD8",
+        parent = c("CD8", "other immune"),
+        r = 100
+      )
+      
+      return(data.frame(
+        windowSize = c(size, size),
+        iter = c(x, x),
+        test = c("kontextual", "original"),
+        value = c(kontextResult$kontextual, kontextResult$original)))
+      
+    }, BPPARAM = BiocParallel::MulticoreParam(workers = cores)) |>
+      bind_rows()
+    
+  return(sizeResults)
+  }) |> bind_rows()
+
+
+
+
+combinedWindowResult = bigWindowResults |> 
+  select(original, kontextual, windowSize) |> 
+  pivot_longer(
+    cols = c(original, kontextual),
+    names_to = "test", 
+    values_to = "value"
+  ) |> 
+  bind_rows(smallWindowResults)
+
+kontextualWindowResults = combinedWindowResult |> 
+  filter(test == "kontextual") 
+
+
+originalWindowResults = combinedWindowResult |> 
+  filter(test == "original") 
+
+```
+
+```{r}
+combinedWindowResult |> 
+  ggplot(aes(x = factor(windowSize), y = value)) +
+  geom_beeswarm() +
+  facet_wrap(~test) +
+  geom_hline(yintercept = 0, lty = "dashed", col = "black") +
+  labs(x = "Window scale",
+       y = "Relationship Value")+
+  theme_classic()
+```
+
+
+## Plotting results
+
+```{r fig.width = 10, fig.height = 3}
+
+
+plotStabilityResult = function(result, observedVal,  ylim) {
+  
+  p = result |> 
+  data.frame(check.names = FALSE) |> 
+  pivot_longer(everything()) |> 
+    mutate(name = as.numeric(name)*100) |> 
+    mutate(name = as.character(name)) |> 
+  ggplot(aes(x = name, y = value)) +
+  geom_boxplot() +
+  geom_hline(yintercept = 0, col = "black", linetype = "dashed") +
+  geom_hline(yintercept = observedVal, col = "red", linetype = "dashed") +
+  theme_classic() +
+  labs(x = "Percentage of cell type removed") +
+   ylim
+  
+  return(p)
+}
+
+plotWindowResult = function(result, observedVal, ylim) {
+  result |>
+    ggplot(aes(x = factor(windowSize), y = value)) +
+    geom_beeswarm() +
+    geom_hline(yintercept = 0, lty = "dashed", col = "black") +
+     geom_hline(yintercept = observedVal, col = "red", linetype = "dashed") +
+    theme_classic() +
+    labs(x = "Window size") +
+    ylim
+  
+}
+
+
+kontextYlim = ylim(-0.5, 60)
+lFuncYlim = ylim(-30, 40)
+
+stability9Kontext = 
+plotStabilityResult(tumourResultsKontext,
+                    observedVal = observedResult$kontextual,
+                    ylim = kontextYlim) +
+  labs(x = "% tumour cells removed \n (n = 2642)",
+       y = "Kontextual value") +
+plotStabilityResult(CD8ResultsKontext,
+                    observedVal = observedResult$kontextual,
+                    ylim = kontextYlim)  +
+  labs(x = "% CD8 T cells removed \n (n = 391)",
+       y = "Kontextual value") +
+  plotStabilityResult(contextResultsKontext,
+                    observedVal = observedResult$kontextual,
+                    ylim = kontextYlim) +
+  labs(x = "% immune context removed \n (n = 3272)",
+       y = "Kontextual value") +
+     plotStabilityResult(immuneResultsKontext,
+                    observedVal = observedResult$kontextual,
+                    ylim = kontextYlim) +
+  labs(x = "% remaining immune cells removed \n (n = 2881)",
+       y = "Kontextual value") +
+  plotWindowResult(kontextualWindowResults,
+                   observedVal = observedResult$kontextual,
+                   ylim = kontextYlim) +
+  labs(y = "Kontextual value") +
+  plot_layout(axis_titles = "collect", ncol = 5) &
+  theme(axis.title.x = element_text(size = 12),
+        axis.title.y = element_text(size = 12))
+
+
+stability9Kontext
+
+
+
+stability9Original = plotStabilityResult(tumourResultsOriginal,
+                    observedVal = observedResult$original,
+                    ylim = lFuncYlim) +
+  labs(x = "% tumour cells removed \n (n = 2642)",
+       y = "L-function value") +
+  plotStabilityResult(CD8ResultsOriginal, 
+                    observedVal = observedResult$original,
+                    ylim = lFuncYlim)  +
+  labs(x = "% CD8 T cells removed \n (n = 391)",
+       y = "L-function value") +
+  plotStabilityResult(contextResultsOriginal,
+                    observedVal = observedResult$original,
+                    ylim = lFuncYlim) +
+  labs(x = "% immune context removed \n (n = 3272)",
+      y = "L-function value") +
+     plotStabilityResult(immuneResultsOriginal,
+                    observedVal = observedResult$original,
+                    ylim = lFuncYlim) +
+  labs(x = "% remaining immune cells removed \n (n = 2881)",
+       y = "L-function value") +
+  plotWindowResult(originalWindowResults,
+                   observedVal = observedResult$original,
+                   ylim = lFuncYlim) +
+  labs(y = "L-function value") +
+  plot_layout(axis_titles = "collect", ncol = 5) &
+  theme(axis.title.x = element_text(size = 12),
+        axis.title.y = element_text(size = 12))
+
+
+stability9Original
+
+ggsave("figures/survival/patient9stabilityKontext.pdf", plot = stability9Kontext, height = 4, width = 18)
+ggsave("figures/survival/patient9stabilityOriginal.pdf", plot = stability9Original, height = 4, width = 18)
+
+
+```
+
+
+
+
+
+# ADD PROPOrtions of all images to the plot
+dividing by proportions aims to address the mismatch
+

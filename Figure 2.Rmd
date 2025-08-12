@@ -79,6 +79,7 @@ kerenRs = Statial::kontextCurve(
 
 ```
 
+
 ## Saving kontextCurve
 ```{r savingKontextCurve6}
 kerenRs |> 
@@ -114,7 +115,7 @@ p = kerenKontext |>
   filter(from %in% names(cellcounts[cellcounts >50]), to %in% names(cellcounts[cellcounts >50])) |> 
   ggplot(aes(x = original, y = kontextual, text = test)) +
   geom_point(size = 4) +
-  gghighlight::gghighlight(test == "Keratin+ Tumour__CD8__immune",
+  gghighlight::gghighlight(test %in% c("Keratin+ Tumour__CD8__immune", "DC/Mono__Macrophages__immune"),
                            unhighlighted_params = list(size = 3)) +
   annotate("rect", xmin = -Inf, xmax = 0, ymin = 0, ymax = Inf,
            alpha=0.15, fill="#E25758") +
@@ -131,31 +132,10 @@ ggplotly(p)
 
 #ggsave("figures/keren/Image5scatterPlot.pdf", height = 6, width = 7, dpi = 400)
 ```
-```{r}
-showKontextual(kerenSCE,
-               kerenKontext,
-               image = 5,
-               relationship = "DC/Mono__Macrophages__immune")
 
 
-showKontextual(kerenSCE,
-               kerenKontext,
-               image = 5,
-               relationship = "CD4__Neutrophils__immune")
-showKontextual(kerenSCE,
-               kerenKontext,
-               image = 5,
-               relationship = "CD4__Macrophages__immune")
 
-showKontextual(kerenSCE,
-               kerenKontext,
-               image = 5,
-               relationship = "DC/Mono__CD8__immune")
-
-```
-
-
-# Panel D: Image 5
+# Panel D: Image 5 Tumour - CD8
 
 
 ```{r}
@@ -177,6 +157,46 @@ p +
 
 #ggsave("figures/keren/Image5.pdf", device = "pdf", dpi = 400, height = 5, width = 6)
 ```
+
+
+
+# Panel E: Image 5, Ko- Lo+
+
+
+```{r}
+p = showKontextual(kerenSCE,
+               kerenKontext,
+               image = 5,
+               relationship = "DC/Mono__Macrophages__immune")
+
+p + 
+  labs(title = NULL) +
+  theme_void() + 
+  theme(legend.position = "none") +
+  geom_segment(aes(y = -100, yend = -100,
+                   xend = max(kerenSCE6Plot$x), x = max(kerenSCE6Plot$x) - 100*scale),
+               linewidth = 1, lineend= "round", show.legend = F, col = "black")
+
+#ggsave("figures/keren/Image5Immune.pdf", device = "pdf", dpi = 400, height = 5, width = 6)
+
+kerenSCE5 = kerenSCE |> 
+  filter(imageID == 5)
+
+kerenInhom5 = Statial::Kontextual(
+  kerenSCE5, 
+  parentDf = parentDf,
+  parent = immune,
+  inhom = TRUE,
+  r = 100,
+  cores = 20
+)
+
+
+kerenInhom5 |> 
+  filter(test %in% c("DC/Mono__Macrophages__immune", "Keratin+ Tumour__CD8__immune"))
+```
+
+
 
 # Supplementary: Kontextual on discontinous shapes
 
@@ -255,7 +275,7 @@ image21Immune = kerenSCE |>
   filter(imageID == "21") |> 
   filter(cellType %in% immune) |> 
   ggplot(aes(x = x, y = y)) +
-  geom_point(col = "#D7D8D8", size = 2.3) +
+  geom_point(col = "#ff891c", size = 2.3) +
   theme_void() +
   theme(legend.position = "none") +
   geom_segment(aes(y = -100, yend = -100,
@@ -277,6 +297,77 @@ ggsave("figures/keren/Image21Immune.pdf", plot = image21Immune, device = "pdf", 
 ggsave("figures/keren/Image21Density.pdf", plot = image21density, device = "pdf", dpi = 400, height = 5, width = 6)
 ```
 
+## Simulation on one cell thick context
+
+```{r}
+set.seed(101)
+
+# Parameters
+radius <- 5  # Radius of the circle
+center_x <- 0  # x-coordinate of the center
+center_y <- 0  # y-coordinate of the center
+n <- 100  # Number of points to generate (more points for smoother density)
+
+# Generate angles uniformly distributed between 0 and 2*pi
+angles <- seq(0, 2 * pi, length.out = n)
+
+# Convert polar coordinates to Cartesian coordinates
+x <- center_x + radius * cos(angles)
+y <- center_y + radius * sin(angles)
+
+
+circleDf = data.frame(x = x, y = y) |> 
+  mutate(cellType = case_when(
+    x > 0 & y > 0 ~ "A",
+    TRUE ~ "C"
+  )) 
+
+
+cornerDf = data.frame(
+  x = runif(1000, min = -10, max = 10),
+  y = runif(1000, min = -10, max = 10),
+  cellType = "B") |>
+  filter( x^2 + y^2 > (radius + 3)^2) #|> 
+  #filter(!(x > 0  & y > 0))
+
+kontextCorner = data.frame(
+  x = runif(100, min = 0, max = 6),
+  y = runif(100, min = 0, max = 6),
+  cellType = "B") |> 
+  filter( x^2 + y^2 > (radius - 0.5)^2)  |> 
+  filter( x^2 + y^2 < (radius + 0.5)^2) 
+  
+thinDf = rbind(circleDf, cornerDf, kontextCorner) |> 
+  mutate(imageID = 1)
+
+thinPlot = thinDf |> 
+  ggplot(aes(x = x, y =y, col = cellType)) +
+  geom_point() +
+  theme_void() +
+  scale_color_manual(values=c("#E25758", "#404040",  "#D7D8D8")) +
+  theme(legend.position = "none")
+  
+
+
+thinSCE = SingleCellExperiment(t(thinDf))
+colData(thinSCE) = DataFrame(thinDf)
+
+
+thinKontext = Statial::Kontextual(
+  cells = thinSCE,
+  from = "B",
+  to = "A",
+  parent = c("A", "C"),
+  r = 2
+)
+
+
+thinPlot
+thinKontext
+
+
+#ggsave("figures/simulation/thinPlot.pdf", plot = thinPlot, device = "pdf", dpi = 400, height = 5, width = 6)
+```
 
 
 # Supplementary: Image 6 on other methods
@@ -413,6 +504,7 @@ kerenSF6 <- crawdad:::toSF(pos = kerenDf6[,c("x", "y")],
                           cellTypes = kerenDf6[, "cellType"])
 
 
+set.seed(101)
 ## shuffle cells to create null background
 shuffle_list <- crawdad:::makeShuffledCells(kerenSF6,
                                             scales = c(100, 200, 300, 400, 500)*scale,
@@ -423,7 +515,6 @@ shuffle_list <- crawdad:::makeShuffledCells(kerenSF6,
 
 #save(shuffle_list, file = "data/shuffle_list.rda")
 
-
 results <- crawdad::findTrends(kerenSF6,
                                neighDist = 50*scale,
                                shuffleList = shuffle_list,
@@ -433,6 +524,7 @@ results <- crawdad::findTrends(kerenSF6,
 
 dat <- crawdad::meltResultsList(results, withPerms = TRUE)
 
+#1280 is the first scale with a disnfiicant
 crawdadScore = dat |> 
   filter(reference == "p53+Tumour") |> 
   filter(neighbor == "Immune") |> 
@@ -570,6 +662,53 @@ knnPerm = extractGraphIteractions(knnRes)
 expansionPerm = extractGraphIteractions(expansionRes)
 delaunayPerm = extractGraphIteractions(delaunayRes)
 
+# CRAWDAD
+
+
+crawdadPerm = bplapply(kerenSCEShuffled[1:50], function(sce) {
+    
+  
+  sceDf = sce |>
+    as_tibble() |>
+    column_to_rownames("CellID")
+  
+  sceSF <- crawdad:::toSF(pos = sceDf[, c("x", "y")],
+                          cellTypes = sceDf[, "cellType"])
+  
+  ## shuffle cells to create null background
+  shuffle_list <- crawdad:::makeShuffledCells(sceSF,
+                                            scales = 500*scale,
+                                            perms = 1,
+                                            ncores = 1,
+                                            seed = 101,
+                                            verbose = TRUE)
+  
+  results <- crawdad::findTrends(sceSF,
+                               neighDist = 50*scale,
+                               shuffleList = shuffle_list,
+                               ncores = 1,
+                               verbose = TRUE,
+                               returnMeans = FALSE)
+  
+  dat <- crawdad::meltResultsList(results, withPerms = TRUE)
+  
+  #1280 is the first scale with a disnfiicant
+  crawdadPermScore = dat |> 
+  filter(reference == "p53+Tumour") |> 
+  filter(neighbor == "Immune") |> 
+  filter(scale == 1280) |> 
+  pull(Z) |> 
+  mean()
+  
+  return(crawdadPermScore)
+  
+}, BPPARAM = MulticoreParam(workers = cores)) |> 
+  unlist()
+
+
+
+
+
 
 methodCompareRes$permutedMean = c(
   mean(kontextualPerm),
@@ -580,7 +719,7 @@ methodCompareRes$permutedMean = c(
   mean(expansionPerm),
   mean(delaunayPerm),
   mean(dimplePerm),
-  NA # Crawdad
+  mean(crawdadPerm)
   
 )
 
@@ -593,7 +732,7 @@ methodCompareRes$permutedSD = c(
   sd(expansionPerm),
   sd(delaunayPerm),
   sd(dimplePerm),
-  NA # Crawdad
+  sd(crawdadPerm)
   
 )
 
@@ -606,7 +745,7 @@ methodCompareRes$permutedZscore = c(
   (expansionRes$ct - mean(expansionPerm))/sd(expansionPerm),
   (delaunayRes$ct - mean(delaunayPerm))/sd(delaunayPerm),
   (dimpleRes["Immune", "p53+Tumour"] - mean(dimplePerm))/sd(dimplePerm),
-  crawdadScore
+  (crawdadScore - mean(crawdadPerm))/sd(crawdadPerm)
   
 )
 
@@ -616,3 +755,4 @@ methodCompareRes
 
 
 ```
+
